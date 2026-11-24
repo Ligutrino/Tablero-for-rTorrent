@@ -1,0 +1,9 @@
+out/
+native/work/
+native/out/
+**/.gradle/
+**/.kotlin/
+**/build/
+android/local.properties
+android/engine/src/main/jniLibs/
+.git/

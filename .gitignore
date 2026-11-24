@@ -1,0 +1,12 @@
+out/
+native/work/
+native/out/
+native/downloads/*
+!native/downloads/.gitkeep
+**/.gradle/
+**/.kotlin/
+**/build/
+android/local.properties
+android/.idea/
+android/engine/src/main/jniLibs/
+*.iml
