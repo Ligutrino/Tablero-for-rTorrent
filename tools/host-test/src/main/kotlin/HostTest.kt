@@ -55,7 +55,7 @@ fun main(args: Array<String>) {
     root.deleteRecursively()
     root.mkdirs()
     File(root, ".host-test").createNewFile()
-    val cfg = RtorrentConfig(baseDir = File(root, "base"), downloadDir = File(root, "dl"), caPath = "/etc/ssl/certs")
+    val cfg = RtorrentConfig(baseDir = File(root, "base"), downloadDir = File(root, "dl"), caCertDirs = listOf("/etc/ssl/certs"))
     val exe = File(args[1])
     val states = mutableListOf<EngineState>()
     val engine = RtorrentEngine(RtorrentDaemon(cfg, exe, JvmPlatform))
@@ -63,6 +63,8 @@ fun main(args: Array<String>) {
     engine.start()
     check(engine.state is EngineState.Running, "arranca: ${engine.state}")
     println(cfg.rcFile.readText())
+    check(cfg.caBundleFile.readText().split("BEGIN CERTIFICATE").size > 50, "ca-bundle.pem generado (${cfg.caBundleFile.length() / 1024} KiB)")
+    check(engine.rawCall("network.http.cacert").toString() == cfg.caBundleFile.absolutePath, "rtorrent usa ca-bundle.pem")
     check(engine.version() == "rtorrent 0.16.17", "version ${engine.version()}")
 
     val mh = engine.addUri("magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337")

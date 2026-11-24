@@ -27,8 +27,13 @@ data class RtorrentConfig(
     val ipv6: Boolean? = null,
     /** Pausar torrents si queda menos que esto libre en el disco de descargas (MiB; 0 = no vigilar). */
     val minFreeSpaceMiB: Int = 500,
-    /** Directorio con los certificados CA del sistema (formato hash de OpenSSL). */
-    val caPath: String = "/system/etc/security/cacerts",
+    /**
+     * Directorios con los certificados CA del sistema; se usa el primero que exista.
+     * Android los nombra con el hash *antiguo* de OpenSSL (subject_hash_old), así que OpenSSL 3 no los
+     * encuentra con CApath: el daemon los junta en un solo archivo PEM ([caBundleFile]) en cada arranque.
+     * Android 14+ los tiene en el APEX de Conscrypt (se actualizan por Play); antes, en /system.
+     */
+    val caCertDirs: List<String> = listOf("/apex/com.android.conscrypt/cacerts", "/system/etc/security/cacerts"),
     /** Líneas adicionales de rtorrent.rc, se añaden al final. */
     val extraRcLines: List<String> = emptyList(),
 ) {
@@ -38,6 +43,7 @@ data class RtorrentConfig(
     val rcFile: File get() = File(baseDir, "rtorrent.rc")
     val logFile: File get() = File(logDir, "rtorrent.log")
     val stdoutFile: File get() = File(logDir, "stdout.log")
+    val caBundleFile: File get() = File(baseDir, "ca-bundle.pem")
 
     init {
         require(portRange.first in 1..65535 && portRange.last in portRange.first..65535) { "portRange inválido" }
@@ -64,7 +70,7 @@ data class RtorrentConfig(
         line(externalPortLine ?: "network.port_range.set = $ownPort")
         line("network.port_random.set = no")
         if (!ipv6Available) line("network.block.ipv6.set = true")
-        line("network.http.capath.set = ${q(caPath)}")
+        line("network.http.cacert.set = ${q(caBundleFile.absolutePath)}")
         line("protocol.encryption.set = $encryption")
         line("protocol.pex.set = ${yesNo(pex)}")
         line("dht.mode.set = ${if (dht) "auto" else "disable"}")
@@ -91,6 +97,20 @@ data class RtorrentConfig(
     }
 
     private fun yesNo(b: Boolean) = if (b) "yes" else "no"
+
+    /** Junta los certificados de [caCertDirs] en [caBundleFile]. Devuelve cuántos encontró. */
+    fun writeCaBundle(): Int {
+        val dir = caCertDirs.map(::File).firstOrNull { it.isDirectory && !it.list().isNullOrEmpty() } ?: return 0
+        val pem = Regex("-----BEGIN CERTIFICATE-----[\\s\\S]+?-----END CERTIFICATE-----")
+        val out = StringBuilder()
+        var n = 0
+        dir.listFiles()?.sortedBy { it.name }?.forEach { f ->
+            val text = runCatching { f.readText(Charsets.US_ASCII) }.getOrNull() ?: return@forEach
+            pem.findAll(text).forEach { out.append(it.value).append('\n'); n++ }
+        }
+        if (n > 0) caBundleFile.writeText(out.toString(), Charsets.US_ASCII)
+        return n
+    }
 
     companion object {
         private const val PORT_MARKER = "# puerto-de-RtorrentConfig: "

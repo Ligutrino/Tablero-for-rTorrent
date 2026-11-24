@@ -129,7 +129,7 @@ para y comprueba que la sesión se restaura. Fuera de Docker: `tools/host-test.s
 - Se empaqueta como `lib/<abi>/librtorrent.so` porque desde targetSdk 29 una app solo puede ejecutar
   binarios desde `nativeLibraryDir`. Por eso la app **debe** usar
   `packaging { jniLibs { useLegacyPackaging = true } }`.
-- Certificados HTTPS de trackers: `/system/etc/security/cacerts` (`network.http.capath`).
+- Certificados HTTPS de trackers: se juntan en `files/rtorrent/ca-bundle.pem` desde `/apex/com.android.conscrypt/cacerts` (Android 14+) o `/system/etc/security/cacerts` en cada arranque (`network.http.cacert`). No sirve `capath` directo: Android nombra esos archivos con el hash antiguo de OpenSSL.
 
 ## API del motor
 

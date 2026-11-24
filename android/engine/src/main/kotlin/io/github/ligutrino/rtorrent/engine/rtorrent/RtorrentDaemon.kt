@@ -76,6 +76,9 @@ class RtorrentDaemon(
         rotate(config.logFile)
         rotate(config.stdoutFile)
 
+        if (config.writeCaBundle() == 0) {
+            config.logDir.resolve("stdout.log").appendText("AVISO: no se encontraron certificados CA en ${config.caCertDirs}; los trackers HTTPS fallarán\n")
+        }
         val previousRc = if (config.rcFile.isFile) config.rcFile.readText(Charsets.UTF_8) else null
         config.rcFile.writeText(
             config.render(config.ipv6 ?: platform.ipv6Available(), RtorrentConfig.externalPortLine(previousRc)),
