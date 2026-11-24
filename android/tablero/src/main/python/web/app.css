@@ -284,7 +284,7 @@ button.mini:hover { color: var(--text); border-color: var(--accent); }
 .meter.avail > span { display: block; height: 100%; background: #7e57c2; }
 table.sub { border-collapse: collapse; width: 100%; }
 table.sub th {
-  position: sticky; top: 0; background: var(--panel2); text-align: left; font-weight: 500;
+  position: sticky; top: 0; z-index: 2; background: var(--panel2); text-align: left; font-weight: 500;
   padding: 4px 8px; border-bottom: 1px solid var(--line);
 }
 /* Column edges, as in the main list: a line between titles and a handle to drag. */

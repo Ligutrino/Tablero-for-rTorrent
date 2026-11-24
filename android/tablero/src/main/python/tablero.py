@@ -33,10 +33,9 @@ import urllib.parse
 import urllib.request
 import xmlrpc.client
 import zipfile
-from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.9.2-android.3"
+VERSION = "0.10.1-android.1"
 TAGS_KEY = "tablero_tags"
 OPTS_KEY = "tablero_opts"
 POS_KEY = "tablero_pos"
@@ -189,10 +188,10 @@ class RTorrent:
                     break
                 chunks.append(data)
         raw = b"".join(chunks)
+        sep = raw.find(b"\r\n\r\n")
         if not raw:
             # rTorrent 0.16 cierra sin responder a system.shutdown.normal.
             raise ConnectionError("rTorrent cerró la conexión sin responder")
-        sep = raw.find(b"\r\n\r\n")
         payload = raw[sep + 4:] if sep >= 0 else raw
         result, _ = xmlrpc.client.loads(payload.decode("utf-8", "replace"))
         return result[0]
@@ -681,20 +680,29 @@ class RTorrentBackend:
         elif action == "priority":
             calls = [("d.priority.set", [h, int(kw["value"])]) for h in hashes]
         elif action == "remove":
-            paths = []
+            paths, folders = [], []
             if kw.get("data"):
                 res = self.rt.multicall([c for h in hashes for c in (
-                    ("d.directory", [h]), ("d.name", [h]), ("d.is_multi_file", [h]))])
-                for i in range(0, len(res), 3):
-                    d, n, m = res[i:i + 3]
-                    if isinstance(d, str) and d and isinstance(n, str) and n and not isinstance(m, Exception):
+                    ("d.directory", [h]), ("d.name", [h]), ("d.is_multi_file", [h]),
+                    ("f.multicall", [h, "", "f.path="]))])
+                for i in range(0, len(res), 4):
+                    d, n, m, fl = res[i:i + 4]
+                    if not (isinstance(d, str) and d and isinstance(n, str) and n) or isinstance(m, Exception):
+                        continue
+                    if not m:
                         paths.append(data_location(d, n, m))
+                    elif isinstance(fl, list):
+                        # Only the torrent's own files: its d.directory can be a shared folder
+                        # (added with d.directory_base, e.g. ruTorrent's "do not add the name").
+                        folders.append((d, [f[0] for f in fl if f and isinstance(f[0], str)]))
                 for h in hashes:
                     calls += [("d.stop", [h]), ("d.close", [h])]
             calls += [("d.erase", [h]) for h in hashes]
             res = self.rt.multicall(calls)
             for p in paths:
                 remove_path(p)
+            for d, files in folders:
+                remove_torrent_files(d, files)
             return res
         else:
             raise ValueError("unknown action " + action)
@@ -909,6 +917,8 @@ class RTorrentBackend:
         self.rt.multicall([("d.stop", [h]), ("d.close", [h])])
         try:
             if move:
+                if multi:
+                    self._check_own_folder(h, base, name)
                 dest = os.path.join(target, name)
                 if os.path.realpath(base) == os.path.realpath(dest):
                     raise ValueError("Los datos ya están en esa carpeta")
@@ -960,6 +970,19 @@ class RTorrentBackend:
                 pass
         threading.Thread(target=run, daemon=True).start()
 
+    def _check_own_folder(self, h, folder, name):
+        """A multi-file torrent added with d.directory_base (ruTorrent's "do not add the
+        name") can have a shared folder as its own: moving or renaming that folder would
+        take other torrents' data along. Refused when the folder is not named as the torrent
+        and holds more than the torrent's files."""
+        if os.path.basename(folder.rstrip("/")) == name or not os.path.isdir(folder):
+            return
+        own = {f[0].split("/", 1)[0] for f in self.rt.call("f.multicall", h, "", "f.path=") if f and f[0]}
+        others = sorted(set(os.listdir(folder)) - own)
+        if others:
+            raise ValueError("La carpeta %s no es solo de este torrent (también tiene %s%s); "
+                             "no la muevo ni le cambio el nombre" % (folder, others[0], " y otros" if len(others) > 1 else ""))
+
     def rename_folder(self, h, new):
         """Renames the torrent's own folder (multi-file torrents) on disk and points the
         torrent to it. The files inside stay the same, so no check is needed. The torrent
@@ -975,6 +998,7 @@ class RTorrentBackend:
             raise ValueError("La carpeta ya tiene ese nombre")
         if os.path.lexists(dest):
             raise ValueError("Ya existe %s; no se sobrescribe" % dest)
+        self._check_own_folder(h, old, name)
         self.rt.multicall([("d.stop", [h]), ("d.close", [h])])
         try:
             if os.path.exists(old):
@@ -1545,6 +1569,37 @@ def remove_path(path):
             os.remove(path)
     except OSError as e:
         print("could not delete %s: %s" % (path, e), file=sys.stderr)
+
+
+def remove_torrent_files(folder, files):
+    """Deletes a multi-file torrent's files (paths relative to its folder), then the
+    folders left empty, the torrent's folder last. Anything else in them stays."""
+    folder = os.path.realpath(folder)
+    if folder in ("/", os.path.expanduser("~")) or folder.count("/") < 2:
+        print("refusing to delete in %s" % folder, file=sys.stderr)
+        return
+    dirs = set()
+    for rel in files:
+        parts = [p for p in rel.split("/") if p not in ("", ".")]
+        if not parts or ".." in parts:
+            continue
+        full = os.path.join(folder, *parts)
+        if not os.path.realpath(full).startswith(folder + os.sep):
+            continue  # a link that leads out of the torrent's folder
+        d = os.path.dirname(full)
+        while d != folder and d.startswith(folder + os.sep):
+            dirs.add(d)
+            d = os.path.dirname(d)
+        try:
+            if os.path.isfile(full) or os.path.islink(full):
+                os.remove(full)
+        except OSError as e:
+            print("could not delete %s: %s" % (full, e), file=sys.stderr)
+    for d in sorted(dirs, key=len, reverse=True) + [folder]:
+        try:
+            os.rmdir(d)
+        except OSError:
+            pass  # not empty: holds files that are not the torrent's
 
 
 # ---------------------------------------------------------------- demo
@@ -2525,7 +2580,21 @@ class Handler(SimpleHTTPRequestHandler):
     def _local(self):
         return self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
 
+    def _host_ok(self):
+        """This computer enters without a password, so a page from another site must not
+        reach Tablero through it by pointing its own name at 127.0.0.1 (DNS rebinding):
+        from this computer, the address must name this computer."""
+        if not self._local():
+            return True
+        host = (self.headers.get("Host") or "").strip().lower()
+        name = host[1:host.find("]")] if host.startswith("[") else host.rsplit(":", 1)[0]
+        return (name in ("", "localhost", "::1", socket.gethostname().lower(), local_ip())
+                or name.endswith(".localhost") or re.fullmatch(r"127(\.\d{1,3}){3}", name) is not None)
+
     def _authorized(self):
+        if not self._host_ok():
+            self._json({"error": "Dirección no permitida: abre Tablero en http://localhost:%d" % self.server.server_address[1]}, 403)
+            return False
         if self.access.allowed(self.client_address[0], self.headers.get("Authorization")):
             return True
         body = "Tablero pide la contraseña de Acceso desde la red.".encode()

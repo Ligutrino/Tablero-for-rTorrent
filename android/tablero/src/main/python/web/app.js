@@ -117,7 +117,7 @@ const prefs = Object.assign({
 	columns: null, sort: { col: "added", dir: -1 }, theme: "dark", tint: true,
 	tagbar: true, tagMode: "any", sidebarW: 220, detailsH: 230, tab: "general",
 	interval: 2, lastDir: "", filesTree: true, hideSkipped: false,
-	speedScope: "total", speedRange: 300, units: "bin", tableSort: {}, tableW: {},
+	speedOf: "torrent", speedRange: 300, units: "bin", tableSort: {}, tableW: {},
 }, storedPrefs);
 
 let prefsSync = 0;
@@ -1111,7 +1111,9 @@ const SPEED_SERIES = {
 	ulim: { name: "Límite de subida", tip: "Tope de subida configurado (clic en las velocidades de arriba para cambiarlo). La subida no pasa de esta línea." },
 };
 
-function historyKey(t) { return prefs.speedScope === "torrent" ? t && t.hash : "total"; }
+// Velocidad tab: the selected torrent by default, or all torrents together. (speedOf replaces the old
+// speedScope pref, which started on "total" and was stored that way.)
+function historyKey(t) { return prefs.speedOf === "total" ? "total" : t && t.hash; }
 
 async function loadHistory() {
 	if (prefs.tab !== "speed") return;
@@ -1137,11 +1139,11 @@ function speedLegend(samples, total) {
 
 function renderSpeed(body, t) {
 	const key = historyKey(t);
-	const total = prefs.speedScope === "total";
+	const total = prefs.speedOf === "total";
 	const samples = state.historyKey === key && state.history ? state.history.samples : [];
 	const { series, legend } = speedLegend(samples, total);
 	setHTML(body, `<div class="subtools">
-		${seg("scope", [["total", "Total"], ["torrent", "Torrent seleccionado"]], prefs.speedScope)}
+		${seg("scope", [["torrent", "Torrent seleccionado"], ["total", "Total"]], prefs.speedOf)}
 		${seg("range", SPEED_RANGES, prefs.speedRange)}
 		<span class="spacer"></span>${legend}</div>
 		<div class="chart-wrap">${!key ? `<div class="placeholder">Selecciona un torrent para ver su velocidad</div>` :
@@ -3065,7 +3067,7 @@ function wire() {
 		}
 		const sb = e.target.closest("[data-scope], [data-range]");
 		if (sb) {
-			if (sb.dataset.scope) prefs.speedScope = sb.dataset.scope;
+			if (sb.dataset.scope) prefs.speedOf = sb.dataset.scope;
 			else prefs.speedRange = +sb.dataset.range;
 			savePrefs();
 			renderDetails();
@@ -3207,6 +3209,21 @@ function fitBrand() {
 }
 fitBrand();
 document.fonts?.ready.then(fitBrand);
+
+// WebKit (the desktop window) clips a scrolled list at the pixel above its top when that top falls
+// between pixels (the bar and the tag bar above can have fractional heights), so a line of the rows
+// scrolled under the titles showed above them. Start the list on a whole pixel.
+function snapList() {
+	const w = $("#table-wrap");
+	if (!w) return;
+	w.style.marginTop = "";
+	const f = w.getBoundingClientRect().top % 1;
+	if (f > 0.01) w.style.marginTop = 1 - f + "px";
+}
+if (window.ResizeObserver) {
+	const ro = new ResizeObserver(snapList);
+	["#toolbar", "#tagbar", "#main"].forEach((s) => $(s) && ro.observe($(s)));
+}
 
 (async function init() {
 	$$("[data-icon]").forEach((el) => (el.innerHTML = iconHTML("lucide:" + el.dataset.icon)));

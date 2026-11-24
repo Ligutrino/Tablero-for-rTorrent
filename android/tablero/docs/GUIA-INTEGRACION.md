@@ -2,8 +2,8 @@
 
 Este paquete es para el proyecto que porta rTorrent a Android y quiere usar **Tablero para rTorrent** como interfaz. Se puede leer sin conocer el proyecto de escritorio.
 
-- Base: Tablero 0.9.2 (escritorio, Linux) en desarrollo: los arreglos para rTorrent 0.16 que salieron al probarlo en Termux y el gráfico de velocidad general en Límites.
-- Esta variante: **0.9.2-android.3**, en `fuente/`. Es una rama aparte: la versión de escritorio no cambia.
+- Base: Tablero 0.10.1 (escritorio, Linux), con los arreglos para rTorrent 0.16 que salieron al probarlo en Termux y el gráfico de velocidad general en Límites.
+- Esta variante: **0.10.1-android.1**, en `fuente/`. Es una rama aparte: la versión de escritorio no cambia.
 - `android.patch`: todas las diferencias con la versión de escritorio (5 archivos: tablero.py y web/).
 - `CAMBIOS-ANDROID.md`: qué trae cada versión de la variante. Sirve para llevar los cambios a cada versión nueva de escritorio (`patch -p1 < android.patch` dentro de la carpeta de la versión nueva).
 
@@ -256,6 +256,7 @@ No hay opción de arrancar al encender el teléfono: el teléfono o la tableta c
 ## 9. Seguridad
 
 - Tablero escucha en `127.0.0.1:8090`. Las peticiones desde el mismo equipo no piden contraseña. En Android, **cualquier app del teléfono** puede conectarse a 127.0.0.1. Las peticiones que cambian algo (POST) exigen la cabecera `X-Tablero: 1`, que frena a páginas web abiertas en un navegador, pero no a otra app instalada. Si eso importa, hay dos caminos: dejar rTorrent en un socket Unix privado (lo más delicado) y aceptar el riesgo en Tablero, o pedir que se agregue a Tablero un token por petición que la app inyecte en la WebView.
+- Desde 0.10.1, Tablero responde 403 a un pedido local cuyo `Host` no sea `localhost`, `127.x`, `::1`, el nombre del equipo o su IP en la red (protección contra DNS rebinding). La WebView debe cargar `http://127.0.0.1:PUERTO/` o `http://localhost:PUERTO/`, como ya hace `TableroServidor.url`.
 - ⚙ Opciones → Red abre Tablero a la red local con contraseña (HTTP sin cifrar: solo para la red de casa).
 
 ## 10. API HTTP
@@ -322,6 +323,8 @@ En 0.9.2-android.2, con rTorrent 0.9.8 real y la interfaz en un Pixel 7 emulado 
 - El gráfico de Límites se ve a ancho de teléfono.
 - La misma interfaz con mouse en 1280 px: sin botón de menú, atajos visibles, bordes de columna arrastrables con el mouse.
 - `tablero.run(...)`/`stop()` en un hilo, con `--rtorrent-rc`.
+
+En 0.10.1-android.1 se repitieron todas las pruebas de android.2 y android.3 sobre la base 0.10.1, sin errores.
 
 En 0.9.2-android.3, igual: cada "i" muestra y cierra su texto sin ordenar la columna; tocar otra parte lo cierra; el gráfico de velocidad muestra el punto tocado; dos dedos hacia abajo recargan, un tramo corto no, y un pellizco no. Con mouse en 1280 px no hay ningún "i" y el texto sigue saliendo al pasar el mouse.
 

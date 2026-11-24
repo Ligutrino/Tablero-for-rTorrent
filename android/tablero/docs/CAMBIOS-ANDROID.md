@@ -1,10 +1,13 @@
 # Cambios de la variante Android
 
-## En este repositorio (sobre 0.9.2-android.3)
+## 0.10.1-android.1 (24-11-2026)
 
-- `/api/shutdown` daba error 500 con rTorrent 0.16.17: rTorrent cierra el socket sin responder a
-  `system.shutdown.normal`. Ahora `_send` lo informa como `ConnectionError` y `shutdown()` lo da por bueno.
-  (No está en `android.patch`; hay que llevarlo a la versión de escritorio/Android original.)
+La variante android.3 sobre Tablero 0.10.1 de escritorio (`android.patch` aplicado sin cambios, salvo el número de versión). Trae lo de 0.10.1:
+
+- La pestaña Velocidad empieza en "Torrent seleccionado".
+- Eliminar con datos un torrent de varios archivos borra solo sus archivos y las carpetas que queden vacías; Mover y Renombrar no aceptan una carpeta compartida con otros torrents.
+- Las barras de progreso ya no se dibujan sobre los títulos de las tablas de abajo, ni queda una línea de 1 px sobre los títulos de la lista.
+- Protección contra DNS rebinding: un pedido local con un `Host` desconocido recibe 403. La WebView debe usar `http://127.0.0.1` o `http://localhost` (ver la guía, sección 9).
 
 ## 0.9.2-android.3 (24-11-2026)
 

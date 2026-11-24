@@ -20,7 +20,7 @@ LibreTorrent solo tienen que hablar con `TorrentEngine`.
 
 ## Interfaz: Tablero
 
-`android/tablero` es la app principal: **Tablero 0.9.2-android.3** (tablero.py + web/) corriendo con
+`android/tablero` es la app principal: **Tablero 0.10.1-android.1** (tablero.py + web/) corriendo con
 Python embebido (Chaquopy 17.2, Python 3.12) y mostrado en una WebView, sobre el mismo `:engine`.
 
 ```
