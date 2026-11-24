@@ -3,11 +3,14 @@ package cl.tablero.ui
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -67,6 +70,7 @@ class TableroActivity : Activity() {
         web.loadData("<p style='font-family:sans-serif;padding:2em;color:#888'>Iniciando rTorrent y Tablero…</p>", "text/html", "utf-8")
 
         pedirNotificaciones()
+        ofrecerAccesoArchivos()
         EngineProvider.startService(this)
         cargarCuandoResponda()
         recibir(intent)
@@ -117,6 +121,33 @@ class TableroActivity : Activity() {
             @Suppress("DEPRECATION")
             if (it != "true") super.onBackPressed()
         }
+    }
+
+    /**
+     * Sin "Acceso a todos los archivos", rtorrent solo puede leer y escribir en la carpeta propia de la app:
+     * cualquier otra ruta (p. ej. /storage/emulated/0/Download) da "Permission denied".
+     */
+    private fun ofrecerAccesoArchivos() {
+        if (Environment.isExternalStorageManager()) return
+        val prefs = getSharedPreferences("tablero-app", MODE_PRIVATE)
+        if (prefs.getBoolean("no-pedir-archivos", false)) return
+        AlertDialog.Builder(this)
+            .setTitle("Acceso a los archivos")
+            .setMessage(
+                "Para descargar en Descargas o sembrar archivos que ya tienes en el teléfono, rTorrent necesita " +
+                    "\"Acceso a todos los archivos\". Sin ese permiso solo puede usar la carpeta de la app " +
+                    "(Android/data/cl.tablero.android) y otras rutas fallan con \"Permission denied\".\n\n" +
+                    "Después de activarlo, cierra y vuelve a abrir Tablero.",
+            )
+            .setPositiveButton("Permitir") { _, _ ->
+                val app = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))
+                try { startActivity(app) } catch (e: Exception) {
+                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                }
+            }
+            .setNegativeButton("Ahora no", null)
+            .setNeutralButton("No volver a preguntar") { _, _ -> prefs.edit().putBoolean("no-pedir-archivos", true).apply() }
+            .show()
     }
 
     private fun pedirNotificaciones() {
