@@ -7,6 +7,8 @@
     <uses-permission
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
+    <!-- Para pedir que Android no duerma la app (ahorro de batería); el usuario lo confirma en un diálogo del sistema. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:name=".TableroApp"
