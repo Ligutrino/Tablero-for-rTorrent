@@ -20,7 +20,7 @@ LibreTorrent solo tienen que hablar con `TorrentEngine`.
 
 ## Interfaz: Tablero
 
-`android/tablero` es la app principal: **Tablero 0.9.2-android.1** (tablero.py + web/) corriendo con
+`android/tablero` es la app principal: **Tablero 0.9.2-android.3** (tablero.py + web/) corriendo con
 Python embebido (Chaquopy 17.2, Python 3.12) y mostrado en una WebView, sobre el mismo `:engine`.
 
 ```
@@ -31,9 +31,11 @@ Python embebido (Chaquopy 17.2, Python 3.12) y mostrado en una WebView, sobre el
 
 - Abrir la app arranca el servicio en primer plano. El servicio arranca rtorrent y, mediante un
   `EngineServiceHook`, también tablero.py. Así las reglas de siembra de Tablero siguen funcionando con la pantalla cerrada.
+- La notificación del servicio la pone Tablero (`TableroAvisos`, como el ícono de la bandeja en escritorio):
+  velocidades, torrents con error, **Pausar todo / Reanudar todo / Salir** y un aviso por cada descarga completa.
 - **Apagar rTorrent** en Tablero deja el motor detenido, no en error. La notificación ofrece **Encender**, y
-  `startRtorrent()` / `restartRtorrent()` del puente usan el servicio.
-- **Cambiar puerto** en Tablero edita `rtorrent.rc`. `:engine` reescribe el rc en cada arranque, pero conserva
+  `startRtorrent()` / `restartRtorrent()` del puente usan el servicio. `exportFile()` abre "Guardar como" para respaldos.
+- **Cambiar puerto** en Tablero edita `rtorrent.rc` (se le pasa con `--rtorrent-rc`). `:engine` reescribe el rc en cada arranque, pero conserva
   la línea de puerto si otro cliente la cambió (se compara con la marca `# puerto-de-RtorrentConfig:`).
 - El paquete original, la guía y `android.patch` están en `android/tablero/docs/`. Este repo trae un
   arreglo encima de la versión que entregaste: `/api/shutdown` con rtorrent 0.16.17 (ver `docs/CAMBIOS-ANDROID.md`).

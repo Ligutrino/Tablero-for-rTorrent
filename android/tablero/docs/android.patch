@@ -1,15 +1,16 @@
---- escritorio/tablero.py
-+++ android/tablero.py
+diff -ruN escritorio/tablero.py android/tablero.py
+--- escritorio/tablero.py	2026-11-24 18:47:32.630618842 +0000
++++ android/tablero.py	2026-11-24 18:53:14.857321423 +0000
 @@ -36,7 +36,7 @@
  from http import HTTPStatus
  from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
  
 -VERSION = "0.9.2"
-+VERSION = "0.9.2-android.1"
++VERSION = "0.9.2-android.3"
  TAGS_KEY = "tablero_tags"
  OPTS_KEY = "tablero_opts"
  POS_KEY = "tablero_pos"
-@@ -75,6 +75,24 @@
+@@ -75,6 +75,25 @@
  WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
  CONFIG_BASE = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
  CONFIG_DIR = os.path.join(CONFIG_BASE, "tablero")
@@ -18,6 +19,7 @@
 +PLATFORM = "desktop"
 +ANDROID_STORAGE = "/storage/emulated/0"
 +USER_FILES = None  # --archivos: where Examinar… and the backups start
++RTORRENT_RC = None  # --rtorrent-rc: the .rc the app gives rTorrent, when Tablero cannot find it
 +
 +
 +
@@ -34,7 +36,16 @@
  
  
  def move_old_config(base=CONFIG_BASE):
-@@ -793,7 +811,12 @@
+@@ -441,6 +460,8 @@
+         return self.rt.call("download_list")
+ 
+     def _rc(self):
++        if RTORRENT_RC:
++            return RTORRENT_RC
+         return rtorrent_rc(self.rt.call("system.pid"), self.rt.call("system.env", "", "HOME"))
+ 
+     def session_files(self):
+@@ -793,7 +814,12 @@
          return path
  
      def open_folder(self, h, index=None, sub=None):
@@ -48,7 +59,7 @@
  
      @staticmethod
      def throttle_of(h):
-@@ -1207,7 +1230,7 @@
+@@ -1207,7 +1233,7 @@
  
  def list_dirs(path):
      """Subfolders of a folder on this computer, for the folder picker."""
@@ -57,16 +68,108 @@
      while not os.path.isdir(path):
          path = os.path.dirname(path)
      try:
-@@ -2105,7 +2128,7 @@
+@@ -1496,7 +1522,8 @@
+ def check_target(target):
+     target = os.path.expanduser((target or "").strip())
+     if not os.path.isabs(target):
+-        raise ValueError("Escribe la ruta completa de la carpeta (por ejemplo /home/usuario/Torrents)")
++        raise ValueError("Escribe la ruta completa de la carpeta (por ejemplo %s)" % (
++            "/storage/emulated/0/Download/torrents" if PLATFORM == "android" else "/home/usuario/Torrents"))
+     return os.path.realpath(target)
+ 
+ 
+@@ -2083,7 +2110,9 @@
+     return path
+ 
+ 
+-BACKUP_NAME = re.compile(r"^tablero-respaldo-\d{4}-\d{2}-\d{2}-\d{4}\.zip$")
++# Imported backups end in -importado (-importado-2…), and are never removed as old ones.
++BACKUP_NAME = re.compile(r"^tablero-respaldo-\d{4}-\d{2}-\d{2}-\d{4}(-importado(-\d+)?)?\.zip$")
++BACKUP_IMPORT_MAX = 1024 ** 3
+ BACKUP_EVERY = {"daily": 86400, "weekly": 7 * 86400}
+ 
+ 
+@@ -2105,7 +2134,8 @@
                  conf = json.load(f)
          except (OSError, ValueError):
              conf = {}
 -        return {"folder": conf.get("folder") or os.path.expanduser("~/Respaldos de Tablero"), "every": conf.get("every", "never"),
-+        return {"folder": conf.get("folder") or os.path.join(user_files(), "Respaldos de Tablero"), "every": conf.get("every", "never"),
++        return {"folder": conf.get("folder") or os.path.join(user_files(), "Respaldos de Tablero"), "chosen": bool(conf.get("folder")),
++                "every": conf.get("every", "never"),
                  "keep": int(conf.get("keep", 5)), "last": conf.get("last", 0), "last_file": conf.get("last_file", "")}
  
      def _save_settings(self, conf):
-@@ -2367,8 +2390,19 @@
+@@ -2209,7 +2239,7 @@
+                 conf["folder"] = folder
+             self._save_settings(conf)
+             if auto:
+-                old = sorted(f for f in os.listdir(folder) if BACKUP_NAME.match(f))[:-conf["keep"]]
++                old = sorted(f for f in os.listdir(folder) if BACKUP_NAME.match(f) and "-importado" not in f)[:-conf["keep"]]
+                 for f in old:
+                     try:
+                         os.remove(os.path.join(folder, f))
+@@ -2230,6 +2260,60 @@
+             time.sleep(1800)
+ 
+     @staticmethod
++    def backup_path(path):
++        """A backup Tablero may hand out: named like one, and really a backup."""
++        path = os.path.realpath(path or "")
++        if not BACKUP_NAME.match(os.path.basename(path)):
++            raise ValueError("No es un respaldo de Tablero")
++        Backups._open(path)[0].close()
++        return path
++
++    def import_file(self, read, size, folder="", name=""):
++        """A backup .zip sent from elsewhere (Importar): into the backups folder, named by
++        when it was made, and checked before it is kept."""
++        if size <= 0:
++            raise ValueError("El archivo está vacío")
++        if size > BACKUP_IMPORT_MAX:
++            raise ValueError("El archivo es demasiado grande para ser un respaldo de Tablero")
++        folder = check_target(folder or self.settings()["folder"])
++        try:
++            os.makedirs(folder, exist_ok=True)
++        except OSError as e:
++            raise ValueError("No pude crear la carpeta %s: %s" % (folder, e.strerror or e))
++        tmp = os.path.join(folder, ".importando-%d.tmp" % os.getpid())
++        try:
++            with open(tmp, "wb") as f:
++                left = size
++                while left > 0:
++                    chunk = read(min(left, 1 << 20))
++                    if not chunk:
++                        raise ValueError("El archivo no llegó completo")
++                    f.write(chunk)
++                    left -= len(chunk)
++            try:
++                z, man = self._open(tmp)
++            except ValueError:
++                raise ValueError("%s no es un respaldo de Tablero" % (name or "El archivo"))
++            z.close()
++            stamp = time.strftime("%Y-%m-%d-%H%M", time.localtime(man.get("created") or time.time()))
++            n = 1
++            while True:
++                path = os.path.join(folder, "tablero-respaldo-%s-importado%s.zip" % (stamp, "-%d" % n if n > 1 else ""))
++                if not os.path.exists(path):
++                    break
++                if os.path.getsize(path) == size:  # the same backup, imported again
++                    os.remove(tmp)
++                    return {"path": path, "torrents": len(man.get("torrents", []))}
++                n += 1
++            os.replace(tmp, path)
++        except OSError as e:
++            raise ValueError("No pude guardar el respaldo en %s: %s" % (folder, e.strerror or e))
++        finally:
++            if os.path.exists(tmp):
++                os.remove(tmp)
++        return {"path": path, "torrents": len(man.get("torrents", []))}
++
++    @staticmethod
+     def _open(path):
+         if not path or not os.path.isfile(path):
+             raise ValueError("No encontré el respaldo %s" % path)
+@@ -2367,8 +2451,19 @@
          return False
  
  
@@ -86,7 +189,7 @@
      sys.stdout.flush()
      sys.stderr.flush()
      os.execv(sys.executable, [sys.executable, os.path.abspath(sys.argv[0])] + sys.argv[1:])
-@@ -2445,9 +2479,9 @@
+@@ -2445,14 +2540,16 @@
              return
          url = urllib.parse.urlsplit(self.path)
          if url.path == "/api/access":
@@ -98,7 +201,58 @@
          if url.path == "/api/backups":
              q = urllib.parse.parse_qs(url.query)
              return self._guard(lambda: self.backups.list((q.get("folder") or [""])[0]))
-@@ -2560,8 +2594,12 @@
+         if url.path == "/api/prefs":
+             return self._guard(lambda: self.backups.load_prefs())
++        if url.path == "/api/backup-file":
++            return self._backup_file((urllib.parse.parse_qs(url.query).get("path") or [""])[0])
+         if url.path == "/api/details":
+             h = urllib.parse.parse_qs(url.query)["hash"][0]
+             return self._guard(lambda: self.backend.details(h))
+@@ -2474,6 +2571,22 @@
+             return self._logo(m.group(1), m.group(2))
+         return super().do_GET()
+ 
++    def _backup_file(self, path):
++        """Exportar in a browser: the backup as a download."""
++        try:
++            path = self.backups.backup_path(path)
++            size = os.path.getsize(path)
++            f = open(path, "rb")
++        except (ValueError, OSError) as e:
++            return self._json({"error": str(e)}, 404)
++        with f:
++            self.send_response(200)
++            self.send_header("Content-Type", "application/zip")
++            self.send_header("Content-Length", str(size))
++            self.send_header("Content-Disposition", 'attachment; filename="%s"' % os.path.basename(path))
++            self.end_headers()
++            shutil.copyfileobj(f, self.wfile)
++
+     def _logo(self, name, ext):
+         try:
+             with open(os.path.join(self.tagstore.logo_dir(), name), "rb") as f:
+@@ -2495,6 +2608,11 @@
+         if self.headers.get("X-Tablero") != "1":
+             return self._json({"error": "forbidden"}, 403)
+         n = int(self.headers.get("Content-Length") or 0)
++        url = urllib.parse.urlsplit(self.path)
++        if url.path == "/api/backup-import":  # the .zip itself, not JSON
++            q = urllib.parse.parse_qs(url.query)
++            return self._guard(lambda: self.backups.import_file(
++                self.rfile.read, n, (q.get("folder") or [""])[0], (q.get("name") or [""])[0]))
+         if n > 8 * 1024 * 1024:
+             return self._json({"error": "Demasiado grande"}, 413)
+         try:
+@@ -2553,15 +2671,20 @@
+ 
+     def _set_access(self, body):
+         if not self._local():
+-            raise ValueError("El acceso desde la red solo se cambia en el equipo donde corre Tablero")
++            raise ValueError("El acceso desde la red solo se cambia en %s donde corre Tablero" % (
++                "el teléfono/tableta" if PLATFORM == "android" else "el equipo"))
+         r = self.access.save(body.get("lan"), body.get("password") or "")
+         if r["restart"]:
+             threading.Timer(0.5, restart_self).start()
          return r
  
  
@@ -108,12 +262,12 @@
 +    """Runs Tablero until stop() (or Ctrl+C). argv as on the command line, for example
 +    run(["--android", "--scgi", "127.0.0.1:5000", "--config", "/data/.../files/tablero"])
 +    from an Android app (Chaquopy), in a thread of its own."""
-+    global PLATFORM, CONFIG_DIR, USER_FILES, _server
++    global PLATFORM, CONFIG_DIR, USER_FILES, RTORRENT_RC, _server
 +    p = argparse.ArgumentParser(prog="tablero", description="Interfaz web estilo BiglyBT para rTorrent")
      p.add_argument("--version", action="version", version="Tablero " + VERSION)
      p.add_argument("--scgi", default="127.0.0.1:5000",
                     help="host:puerto o ruta del socket SCGI de rTorrent (por defecto 127.0.0.1:5000)")
-@@ -2569,9 +2607,22 @@
+@@ -2569,9 +2692,26 @@
                     help="dirección donde escuchar (por defecto la de ⚙ Opciones: este equipo o toda la red)")
      p.add_argument("--port", type=int, default=8090, help="puerto web (por defecto 8090)")
      p.add_argument("--demo", action="store_true", help="usar torrents de prueba, sin rTorrent")
@@ -126,7 +280,11 @@
 +                   help="carpeta de configuración (por defecto ~/.config/tablero)")
 +    p.add_argument("--archivos", default=None,
 +                   help="carpeta donde empiezan Examinar… y los respaldos (en Android, p. ej. la de descargas de la app)")
++    p.add_argument("--rtorrent-rc", default=None,
++                   help="el rtorrent.rc que usa rTorrent, si Tablero no lo encuentra solo (Cambiar puerto y los respaldos lo usan)")
 +    a = p.parse_args(argv)
++    if a.rtorrent_rc:
++        RTORRENT_RC = os.path.abspath(os.path.expanduser(a.rtorrent_rc))
 +    if a.archivos:
 +        USER_FILES = os.path.abspath(os.path.expanduser(a.archivos))
 +    if a.android or os.environ.get("TABLERO_PLATAFORMA") == "android":
@@ -139,7 +297,7 @@
      Handler.backend = DemoBackend() if a.demo else RTorrentBackend(a.scgi)
      Handler.history = History(Handler.backend)
      Handler.tagstore = TagStore(os.path.join(
-@@ -2582,14 +2633,33 @@
+@@ -2582,14 +2722,33 @@
                                Handler.backend, Handler.tagstore, Handler.access)
      if not a.demo:
          threading.Thread(target=Handler.backups.run_schedule, daemon=True).start()
@@ -181,9 +339,62 @@
  
  
  if __name__ == "__main__":
---- escritorio/web/app.js
-+++ android/web/app.js
-@@ -24,6 +24,38 @@
+diff -ruN escritorio/web/app.css android/web/app.css
+--- escritorio/web/app.css	2026-11-24 18:47:32.675142107 +0000
++++ android/web/app.css	2026-11-24 18:53:14.894612438 +0000
+@@ -123,6 +123,18 @@
+ .vsplit { width: 4px; cursor: col-resize; background: var(--line); flex: none; }
+ .hsplit { height: 4px; cursor: row-resize; background: var(--line); flex: none; }
+ .vsplit:hover, .hsplit:hover { background: var(--accent); }
++/* Touch screens: the menu button shows, and the edges you drag get a wider area for the
++   finger (the line itself stays thin). */
++#toolbar button.touch-only { display: none; }
++.vsplit, .hsplit, #torrents th .grip, table.sub th .grip { touch-action: none; }
++@media (pointer: coarse) {
++  #toolbar button.touch-only { display: flex; }
++  .vsplit, .hsplit { position: relative; z-index: 4; }
++  .hsplit::before { content: ""; position: absolute; left: 0; right: 0; top: -10px; bottom: -10px; }
++  .vsplit::before { content: ""; position: absolute; top: 0; bottom: 0; left: -10px; right: -10px; }
++  #torrents th .grip { right: -9px; width: 18px; }
++  table.sub th .grip { width: 18px; }
++}
+ 
+ /* sidebar */
+ #sidebar h3 {
+@@ -464,6 +476,20 @@
+ #tagbar .chip.logo-only.on { box-shadow: 0 0 0 2px var(--accent) inset; }
+ .slogo { object-fit: contain; flex: none; display: block; }
+ #sidebar li .swatch.strip { width: 5px; border-radius: 3px; }
++/* Touch: the "i" beside a text that a mouse shows on hover (only drawn on a touch screen). */
++.info {
++  display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; flex: none;
++  border: 1px solid var(--line); font-size: 10px; font-weight: 700; font-style: normal; line-height: 1; color: var(--dim);
++  margin-left: 5px; vertical-align: 1px; position: relative; text-transform: none; letter-spacing: 0;
++}
++.info::after { content: ""; position: absolute; inset: -9px; }   /* a bigger target for the finger */
++.legend-item .info { margin-left: 0; }
++#reload-hint {
++  position: fixed; top: 10px; left: 50%; z-index: 90; transform: translateX(-50%); pointer-events: none;
++  background: var(--panel2); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow);
++  padding: 6px 14px; font-size: 12.5px; color: var(--dim);
++}
++#reload-hint.ready { color: var(--text); border-color: var(--accent); }
+ .help {
+   display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%;
+   border: 1px solid var(--line); font-size: 10px; cursor: help; color: var(--dim); margin-left: 4px;
+@@ -640,7 +666,7 @@
+ .add-tor-files { max-height: 240px; overflow: auto; border: 1px solid var(--line); border-radius: 5px; margin-top: 4px; padding: 2px 0; }
+ .add-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .add-size { color: var(--dim); font-variant-numeric: tabular-nums; flex: none; }
+-.add-tools { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
++.add-tools { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+ .add-row { display: flex; align-items: center; height: 24px; padding-right: 8px; }
+ .add-row:hover { background: var(--hover); }
+ #modal .add-row .check { flex: 1; min-width: 0; gap: 8px; height: 24px; }
+diff -ruN escritorio/web/app.js android/web/app.js
+--- escritorio/web/app.js	2026-11-24 18:47:32.676133377 +0000
++++ android/web/app.js	2026-11-24 18:53:14.895070534 +0000
+@@ -24,6 +24,46 @@
  	`<button type="button" class="tbtn${on ? " on" : ""}" ${attrs}${on ? ' aria-pressed="true"' : ""}>${iconHTML("lucide:" + icon)}<span>${label}</span></button>`;
  // A command for the terminal, with its own Copiar button (any [data-copy-cmd] copies).
  const cmdHTML = (text) => `<span class="cmd"><code>${esc(text)}</code>${toolBtn("copy", "Copiar", `data-copy-cmd="${esc(text)}" title="Copiar el comando"`)}</span>`;
@@ -195,6 +406,14 @@
 +const isAndroid = () => state.platform === "android";
 +const androidCan = (fn) => typeof window.TableroAndroid?.[fn] === "function";
 +const canOpenFolder = () => !isAndroid() || androidCan("openFolder");
++// A touch screen (phone or tablet): no mouse hover, no right click, no keyboard shortcuts.
++const touchUI = () => matchMedia("(pointer: coarse)").matches;
++// How the texts name the device Tablero runs on.
++const thisDevice = () => (isAndroid() ? "este teléfono/tableta" : "este equipo");
++// How to filter by several tags at once.
++// Touch: a small "i" beside a text that a mouse shows on hover. Tapping it shows the text.
++const info = (title, text) => touchUI() ? `<span class="info" role="button" data-tip-title="${esc(title)}" data-tip="${esc(text)}">i</span>` : "";
++const multiTagHow = () => (touchUI() ? "toque largo en una etiqueta y Agregar al filtro" : "Ctrl+clic");
 +// How to start or restart rTorrent: a command for the terminal, or on Android the app's button.
 +function rtorrentCmdHTML(kind) {
 +	if (!isAndroid()) return cmdHTML(kind === "start" ? START_CMD : RESTART_CMD);
@@ -222,16 +441,195 @@
  // A choice between a few options: [value, label, icon?].
  const seg = (name, items, cur) => `<span class="seg">${items.map(([v, n, icon]) =>
  	`<button type="button" data-${name}="${v}" class="${String(cur) === String(v) ? "on" : ""}">${icon ? iconHTML("lucide:" + icon) : ""}<span>${n}</span></button>`).join("")}</span>`;
-@@ -595,7 +627,7 @@
+@@ -278,7 +318,7 @@
+ }
+ 
+ const COLUMNS = [
+-	{ id: "pos", title: "#", w: 50, num: true, get: (t) => t.pos || 1e9, html: (t) => t.pos || "", tip: () => "Posición del torrent en la lista. Cámbiala con Ctrl+↑ / Ctrl+↓ o desde el menú del torrent" },
++	{ id: "pos", title: "#", w: 50, num: true, get: (t) => t.pos || 1e9, html: (t) => t.pos || "", headTip: true, tip: () => "Posición del torrent en la lista. " + (touchUI() ? "Cámbiala desde el menú del torrent" : "Cámbiala con Ctrl+↑ / Ctrl+↓ o desde el menú del torrent") },
+ 	{ id: "name", title: "Nombre", w: 380, get: (t) => t.name.toLowerCase(),
+ 		html: (t) => `<span class="ico">${statusIcon(t)}</span>${esc(t.name)}`, cls: "name", tip: (t) => t.name },
+ 	{ id: "tags", title: "Etiquetas", w: 220, get: (t) => (t.tags.length ? tagRank(t.tags[0]) : 1e7),
+@@ -286,13 +326,13 @@
+ 	{ id: "size", title: "Tamaño", w: 90, num: true, get: (t) => t.size, html: (t) => size(t.size) },
+ 	{ id: "progress", title: "Progreso", w: 120, get: (t) => (t.size ? t.done / t.size : 1), html: progressBar },
+ 	{ id: "status", title: "Estado", w: 120, get: (t) => ["queued", "waiting"].includes(t.status) ? t.status + String(t.queue_pos).padStart(4, "0") : t.status,
+-		html: (t) => `<span class="st st-${t.status}">${statusText(t)}</span>`, tip: (t) => t.status === "queued" ? "Espera su turno: rTorrent verifica un torrent a la vez" : t.status === "waiting" ? "Espera su turno: Tablero reubica un torrent a la vez" : messageText(t) },
++		html: (t) => `<span class="st st-${t.status}">${statusText(t)}</span>${statusTip(t) ? info(statusText(t), statusTip(t)) : ""}`, tip: statusTip },
+ 	{ id: "down_rate", title: "Bajada", w: 90, num: true, get: (t) => t.down_rate, html: (t) => `<span class="rate-down">${rate(t.down_rate)}</span>` },
+ 	{ id: "up_rate", title: "Subida", w: 90, num: true, get: (t) => t.up_rate, html: (t) => `<span class="rate-up">${rate(t.up_rate)}</span>` },
+ 	{ id: "eta", title: "Tiempo rest.", w: 95, num: true, get: (t) => (t.eta < 0 ? 1e12 : t.eta), html: (t) => eta(t.eta) },
+ 	{ id: "seeds", title: "Semillas", w: 70, num: true, get: (t) => t.seeds, html: (t) => t.seeds || "" },
+ 	{ id: "peers", title: "Pares", w: 60, num: true, get: (t) => t.peers, html: (t) => t.peers || "" },
+-	{ id: "ratio", title: "Proporción", tip: () => "Subido ÷ descargado", w: 85, num: true, get: (t) => t.ratio, html: (t) => nf2.format(t.ratio) },
++	{ id: "ratio", title: "Proporción", headTip: true, tip: () => "Subido ÷ descargado", w: 85, num: true, get: (t) => t.ratio, html: (t) => nf2.format(t.ratio) },
+ 	{ id: "up_total", title: "Subido", w: 90, num: true, get: (t) => t.up_total, html: (t) => size(t.up_total) },
+ 	{ id: "done", title: "Descargado", w: 95, num: true, get: (t) => t.done, html: (t) => size(t.done) },
+ 	{ id: "left", title: "Restante", w: 90, num: true, get: (t) => t.size - t.done, html: (t) => (t.size - t.done ? size(t.size - t.done) : "") },
+@@ -470,15 +510,15 @@
+ function renderTagbar() {
+ 	const bar = $("#tagbar");
+ 	// With the bar hidden, "Coincide" goes to the sidebar's Etiquetas heading.
+-	setHTML($("#side-mode"), prefs.tagbar ? "" : `<span title="Coincide: al elegir varias etiquetas (Ctrl+clic), mostrar los torrents que tengan cualquiera de ellas o todas">` +
+-		seg("tagmode", [["any", "Cualquiera"], ["all", "Todas"]], prefs.tagMode) + "</span>");
++	setHTML($("#side-mode"), prefs.tagbar ? "" : `<span title="Coincide: al elegir varias etiquetas (${multiTagHow()}), mostrar los torrents que tengan cualquiera de ellas o todas">` +
++		seg("tagmode", [["any", "Cualquiera"], ["all", "Todas"]], prefs.tagMode) + info("Coincide", `Al elegir varias etiquetas (${multiTagHow()}), mostrar los torrents que tengan cualquiera de ellas o todas`) + "</span>");
+ 	if (!prefs.tagbar) { setHTML(bar, ""); return; }
+ 	const counts = new Map();
+ 	filtered({ skipTags: true }).forEach((t) => t.tags.forEach((x) => counts.set(x, (counts.get(x) || 0) + 1)));
+ 	const tags = allTags().filter((x) => counts.has(x) || state.filter.tags.has(x));
+ 	if (!tags.length) { setHTML(bar, ""); return; }
+ 	setHTML(bar, tags.map((x) => chip(x, ` <span class="n">${counts.get(x) || 0}</span>`, "bar", state.filter.tags.has(x) ? "on" : "")).join("") +
+-		`<span class="mode" title="Al elegir varias etiquetas (Ctrl+clic), mostrar los torrents que tengan cualquiera de ellas o todas"><span class="dimtxt">Coincide</span>` +
++		`<span class="mode" title="Al elegir varias etiquetas (${multiTagHow()}), mostrar los torrents que tengan cualquiera de ellas o todas"><span class="dimtxt">Coincide</span>${info("Coincide", `Al elegir varias etiquetas (${multiTagHow()}), mostrar los torrents que tengan cualquiera de ellas o todas`)}` +
+ 		seg("tagmode", [["any", "Cualquiera"], ["all", "Todas"]], prefs.tagMode) + "</span>");
+ }
+ 
+@@ -488,7 +528,7 @@
+ 	setHTML($("#torrents thead tr"), cols.map((c) => {
+ 		const d = COL[c.id];
+ 		const arrow = prefs.sort.col === c.id ? `<span class="arrow">${prefs.sort.dir > 0 ? "▲" : "▼"}</span>` : "";
+-		return `<th data-col="${c.id}" draggable="true" class="${d.num ? "num" : ""}" title="${esc(d.title)}">${esc(d.title)}${arrow}<span class="grip"></span></th>`;
++		return `<th data-col="${c.id}" draggable="true" class="${d.num ? "num" : ""}" title="${esc(d.title)}">${esc(d.title)}${d.headTip ? info(d.title, d.tip()) : ""}${arrow}<span class="grip"></span></th>`;
+ 	}).join(""));
+ }
+ 
+@@ -572,13 +612,16 @@
+ 		if (!$("#piece-map", body)) {
+ 			body.innerHTML = `<div class="meters">
+ 				<span class="lbl">Descargado</span><canvas id="piece-map" class="meter"></canvas><span class="val" id="gen-pct"></span>
+-				<span class="lbl">Disponibilidad</span><div class="meter avail" id="gen-avail" data-tip-title="Disponibilidad"><span></span></div><span class="val" id="gen-av"></span>
++				<span class="lbl">Disponibilidad${info("Disponibilidad", "")}</span><div class="meter avail" id="gen-avail" data-tip-title="Disponibilidad"><span></span></div><span class="val" id="gen-av"></span>
+ 			</div><div id="gen-grid"></div>`;
+ 		}
+ 		$("#gen-pct", body).textContent = `${nf1.format(pct * 100)} %`;
+ 		$("#gen-av", body).textContent = av == null ? "…" : nf2.format(av);
+ 		const avail = $("#gen-avail", body);
+-		avail.dataset.tip = d && !d.availability_estimated ? "Copias completas del torrent entre los pares conectados: el número entero es cuántas copias hay de la pieza más escasa y la fracción, qué parte de las piezas tiene una copia más." : "Estimada a partir del avance de los pares conectados.";
++		const availTip = d && !d.availability_estimated ? "Copias completas del torrent entre los pares conectados: el número entero es cuántas copias hay de la pieza más escasa y la fracción, qué parte de las piezas tiene una copia más." : "Estimada a partir del avance de los pares conectados.";
++		avail.dataset.tip = availTip;
++		const availInfo = $(".lbl .info", body);
++		if (availInfo) availInfo.dataset.tip = availTip;
+ 		avail.firstChild.style.width = `${av == null ? 0 : Math.min(1, av) * 100}%`;
+ 		setHTML($("#gen-grid", body), dl([
+ 			["Estado", `<span class="st st-${t.status}">${statusText(t)}</span>`],
+@@ -594,8 +637,8 @@
  			["Creado", date(t.created) || "—"],
  			["Prioridad", PRIO[t.priority] || ""],
  			["Etiquetas", t.tags.map((x) => chip(x)).join(" ") || "—", true],
 -			["Carpeta", `<span class="folder-line"><span title="${esc(d && d.base_path || t.directory)}">${esc(d && d.base_path || t.directory)}</span>${toolBtn("folder-open", "Abrir", 'data-open-folder title="Abrir en el explorador de archivos"')}</span>`, true],
+-			["Identificador", `<code title="Huella única del torrent (info-hash), la misma en toda la red">${t.hash}</code>`, true],
 +			["Carpeta", `<span class="folder-line"><span title="${esc(d && d.base_path || t.directory)}">${esc(d && d.base_path || t.directory)}</span>${canOpenFolder() ? toolBtn("folder-open", "Abrir", 'data-open-folder title="Abrir en el explorador de archivos"') : ""}</span>`, true],
- 			["Identificador", `<code title="Huella única del torrent (info-hash), la misma en toda la red">${t.hash}</code>`, true],
++			["Identificador", `<code title="Huella única del torrent (info-hash), la misma en toda la red">${t.hash}</code>${info("Identificador", "Huella única del torrent (info-hash), la misma en toda la red")}`, true],
  			...(t.message ? [["Mensaje", `<span class="folder-line"><span title="${esc(messageText(t))}">${esc(messageText(t))}</span>${toolBtn("copy", "Copiar", 'data-copy-message title="Copiar el mensaje"')}</span>`, true]] : []),
  			...(d && d.chunks ? [["Piezas", `${nf0.format(d.chunks)} × ${size(d.chunk_size)}`]] : []),
-@@ -1187,6 +1219,7 @@
+ 			["Privado", t.private ? "Sí" : "No"],
+@@ -897,12 +940,69 @@
+ 	tip.style.top = (y + 18 + r.height > innerHeight ? y - r.height - 10 : y + 18) + "px";
+ }
+ function hideTip() { $("#tip").hidden = true; }
++// The legend item is what shows the text; the "i" only marks it on a touch screen.
++const legendInfo = () => (touchUI() ? '<span class="info" aria-hidden="true">i</span>' : "");
++function statusTip(t) {
++	return t.status === "queued" ? "Espera su turno: rTorrent verifica un torrent a la vez" : t.status === "waiting" ? "Espera su turno: Tablero reubica un torrent a la vez" : messageText(t);
++}
++
++// Touch: tapping an "i" (or a legend, or a "?") shows its text; a tap anywhere else hides it.
++function wireTouchTips() {
++	document.addEventListener("click", (e) => {
++		const el = e.target.closest?.("[data-tip]");
++		if (!el || el.matches("button")) return;
++		e.preventDefault();
++		e.stopPropagation();
++		if (state.tipEl === el && !$("#tip").hidden) return hideTip();
++		const r = el.getBoundingClientRect();
++		showTip(r.left, r.bottom - 12, `<b>${esc(el.dataset.tipTitle || "")}</b><div>${esc(el.dataset.tip)}</div>`);
++		state.tipEl = el;
++	}, true);
++	document.addEventListener("pointerdown", (e) => {
++		if ($("#tip").hidden || e.target.closest?.("[data-tip]") || e.target === state.tipCanvas) return;
++		state.tipCanvas?.onmouseleave?.();
++		state.tipCanvas = null;
++		hideTip();
++	}, true);
++	// The table and panels scroll under it.
++	document.addEventListener("scroll", () => { if (!$("#tip").hidden && !state.tipCanvas) hideTip(); }, true);
++}
++
++// Touch: two fingers dragged down together reload the page. One finger scrolls the list and a
++// pinch (fingers moving apart or together) zooms, so neither gets in the way.
++function wireTwoFingerReload() {
++	const hint = document.createElement("div");
++	hint.id = "reload-hint";
++	hint.hidden = true;
++	document.body.append(hint);
++	let start = null, ready = false;
++	const pts = (e) => [...e.touches].slice(0, 2).map((t) => [t.clientX, t.clientY]);
++	const gap = (p) => Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]);
++	const reset = () => { start = null; ready = false; hint.hidden = true; };
++	document.addEventListener("touchstart", (e) => {
++		const zoomed = window.visualViewport && visualViewport.scale > 1.05;   // two fingers then pan the zoomed page
++		if (e.touches.length === 2 && !zoomed && !modalOpen()) start = pts(e); else reset();
++	}, { passive: true });
++	document.addEventListener("touchmove", (e) => {
++		if (!start || e.touches.length !== 2) return;
++		const p = pts(e);
++		if (Math.abs(gap(p) - gap(start)) > 50) return reset();   // a pinch
++		const dy = Math.min(p[0][1] - start[0][1], p[1][1] - start[1][1]);
++		ready = dy > 110;
++		hint.hidden = dy < 25;
++		hint.classList.toggle("ready", ready);
++		hint.textContent = ready ? "Suelta para recargar" : "Sigue bajando para recargar";
++		hint.style.transform = `translate(-50%, ${Math.min(dy, 110) * 0.5}px)`;
++	}, { passive: true });
++	document.addEventListener("touchend", () => { if (ready) location.reload(); reset(); });
++	document.addEventListener("touchcancel", reset);
++}
+ 
+ // ------------------------------------------------------------ pieces tab
+ 
+ const PIECE_CATS = {
+ 	done: { name: "Completa", tip: "Pieza descargada y verificada. Ya está en tu disco y puedes compartirla con otros." },
+-	partial: { name: "Parcial", tip: "El cuadro agrupa varias piezas y solo algunas están completas. Pasa el mouse sobre el mapa para ver el detalle." },
++	partial: { name: "Parcial", tip: `El cuadro agrupa varias piezas y solo algunas están completas. ${touchUI() ? "Toca" : "Pasa el mouse sobre"} el mapa para ver el detalle.` },
+ 	avail: { name: "Disponible en pares", tip: "Te falta esta pieza, pero al menos un par conectado la tiene, así que se puede descargar ahora." },
+ 	nosource: { name: "Sin fuentes", tip: "Te falta esta pieza y ningún par conectado la tiene. El torrent no se puede completar hasta que aparezca alguien con ella." },
+ 	missing: { name: "Falta", tip: "Te falta esta pieza. Con el torrent detenido o en pausa no hay pares conectados, así que no se sabe quién la tiene." },
+@@ -931,7 +1031,7 @@
+ 	const cols = Math.max(1, Math.floor(($("#details-body").clientWidth - 32 + PIECE_GAP) / (PIECE_CELL + PIECE_GAP)));
+ 	const k = Math.ceil(p.n / (cols * PIECE_ROWS));
+ 	const shown = ["done", ...(k > 1 ? ["partial"] : []), ...(d.seen ? ["avail", "nosource"] : ["missing"]), "skipped"];
+-	const legend = shown.map((c) => `<span class="legend-item" data-tip-title="${PIECE_CATS[c].name}" data-tip="${esc(PIECE_CATS[c].tip)}">` +
++	const legend = shown.map((c) => `<span class="legend-item" data-tip-title="${PIECE_CATS[c].name}" data-tip="${esc(PIECE_CATS[c].tip)}">${legendInfo()}` +
+ 		`<i class="sw pc-${c}"></i>${PIECE_CATS[c].name}${c === "partial" ? "" : ` <b>${nf0.format(counts[c] || 0)}</b>`}</span>`).join("");
+ 	return `<div class="subtools">${legend}<span class="spacer"></span>
+ 		<span class="dimtxt">${nf0.format(p.n)} piezas de ${size(d.chunk_size)}${k > 1 ? ` · cada cuadro = ${k} piezas` : ""} · disponibilidad ${nf2.format(d.availability)}</span></div>
+@@ -998,6 +1098,7 @@
+ 			(files.length ? `<div class="dimtxt">${esc(files.slice(0, 3).join(", "))}${files.length > 3 ? ` y ${files.length - 3} más` : ""}</div>` : ""));
+ 	};
+ 	canvas.onmouseleave = hideTip;
++	canvas.onpointerdown = (e) => { if (e.pointerType !== "mouse") { state.tipCanvas = canvas; canvas.onmousemove(e); } };
+ }
+ 
+ // ------------------------------------------------------------ speed tab
+@@ -1029,7 +1130,7 @@
+ 	const last = samples[samples.length - 1];
+ 	const series = ["down", "up", ...(total && last && last[3] ? ["dlim"] : []), ...(total && last && last[4] ? ["ulim"] : [])];
+ 	const value = (s) => !last ? "" : s === "down" ? rate(last[1]) || "0 B/s" : s === "up" ? rate(last[2]) || "0 B/s" : s === "dlim" ? rate(last[3]) : rate(last[4]);
+-	const legend = series.map((s) => `<span class="legend-item" data-tip-title="${SPEED_SERIES[s].name}" data-tip="${esc(SPEED_SERIES[s].tip)}">` +
++	const legend = series.map((s) => `<span class="legend-item" data-tip-title="${SPEED_SERIES[s].name}" data-tip="${esc(SPEED_SERIES[s].tip)}">${legendInfo()}` +
+ 		`<i class="ln ln-${s}"></i>${SPEED_SERIES[s].name} <b>${value(s)}</b></span>`).join("");
+ 	return { series, legend };
+ }
+@@ -1157,6 +1258,7 @@
+ 			`<div><i class="ln ln-down"></i>Bajada ${rate(best[1]) || "0 B/s"}</div><div><i class="ln ln-up"></i>Subida ${rate(best[2]) || "0 B/s"}</div>`);
+ 	};
+ 	canvas.onmouseleave = () => { draw(null); hideTip(); };
++	canvas.onpointerdown = (e) => { if (e.pointerType !== "mouse") { state.tipCanvas = canvas; canvas.onmousemove(e); } };
+ }
+ 
+ // Downloaded pieces, BiglyBT style: each pixel column shows how many of
+@@ -1195,6 +1297,7 @@
  		state.torrents = data.torrents;
  		state.byHash = new Map(data.torrents.map((t) => [t.hash, t]));
  		state.stats = data.stats;
@@ -239,7 +637,7 @@
  		state.ok = true;
  		reportJobs();
  		const c = $("#st-conn");
-@@ -1202,7 +1235,7 @@
+@@ -1211,7 +1314,7 @@
  		const c = $("#st-conn");
  		$("#st-port").hidden = true;
  		c.className = "err";
@@ -248,7 +646,16 @@
  		if (c._html !== html) { c.innerHTML = html; c._html = html; }
  	}
  	timer = setTimeout(refresh, Math.max(1, prefs.interval) * 1000);
-@@ -1293,7 +1326,7 @@
+@@ -1260,7 +1363,7 @@
+ 		if (it.head) { m.insertAdjacentHTML("beforeend", `<div class="head">${esc(it.head)}</div>`); continue; }
+ 		const d = document.createElement("div");
+ 		d.className = "item" + (it.disabled ? " disabled" : "");
+-		d.innerHTML = `<span class="chk">${it.chk === true ? sico("check") : it.chk === "mixed" ? "–" : ""}</span>${it.html || esc(it.label)}${it.k ? `<span class="k">${esc(it.k)}</span>` : ""}`;
++		d.innerHTML = `<span class="chk">${it.chk === true ? sico("check") : it.chk === "mixed" ? "–" : ""}</span>${it.html || esc(it.label)}${it.k && !touchUI() ? `<span class="k">${esc(it.k)}</span>` : ""}`;
+ 		d.onclick = () => { closeMenu(); it.run(); };
+ 		m.append(d);
+ 	}
+@@ -1302,7 +1405,7 @@
  		{ label: "Al principio", k: "Ctrl+Inicio", run: () => movePos("top") },
  		{ label: "Al final", k: "Ctrl+Fin", run: () => movePos("bottom") },
  		"-",
@@ -257,7 +664,63 @@
  		{ label: "Reubicar datos…", run: relocateDialog },
  		{ label: "Renombrar carpeta…", disabled: ts.length !== 1 || ts[0].files < 2, run: renameFolderDialog },
  		{ label: "Verificar datos", run: () => act("/api/action", { action: "recheck", hashes: hs }, "Verificación iniciada: se revisa cada pieza contra el .torrent") },
-@@ -2053,6 +2086,11 @@
+@@ -1322,6 +1425,11 @@
+ 			run: () => { if (c.on && visibleCols().length === 1) return; c.on = !c.on; savePrefs(); renderTable(); },
+ 		})),
+ 		"-",
++		...(touchUI() ? [{ label: "Ajustar el ancho al texto", run: () => {
++			visibleCols().forEach((c, i) => (c.w = fitWidth($("#torrents"), i)));
++			savePrefs();
++			renderTable();
++		} }] : []),
+ 		{ label: "Restablecer columnas", run: () => { prefs.columns = null; savePrefs(); renderTable(); } },
+ 		{ label: "Vista por defecto (orden y filtro)", run: () => {
+ 			prefs.sort = { col: "added", dir: -1 };
+@@ -1343,10 +1451,13 @@
+ 		state.tagConf.order = o;
+ 		saveTagConf();
+ 	};
+-	const hs = selected();
++	const hs = selected(), f = state.filter.tags;
+ 	openMenu(e.clientX, e.clientY, [
+ 		{ html: chip(name), disabled: true },
+ 		"-",
++		// On a touch screen there is no Ctrl+clic to filter by several tags.
++		...(touchUI() ? [{ label: f.has(name) ? "Quitar del filtro" : f.size ? "Agregar al filtro" : "Filtrar por esta etiqueta",
++			run: () => toggleTagFilter(name, true) }, "-"] : []),
+ 		{ label: "Opciones de etiqueta…", run: () => tagDialog(name) },
+ 		{ label: `Agregar a ${hs.length} seleccionado${hs.length === 1 ? "" : "s"}`, disabled: !hs.length, run: () => act("/api/edit-tags", { hashes: hs, add: [name] }) },
+ 		{ label: "Quitar de los seleccionados", disabled: !hs.length, run: () => act("/api/edit-tags", { hashes: hs, remove: [name] }) },
+@@ -1428,6 +1539,10 @@
+ 		case "new-tag": return tagDialog(null);
+ 	}
+ 	if (!hs.length) return toast("Selecciona uno o más torrents");
++	if (cmd === "menu") { // touch screens: the torrent menu without a long press
++		const r = $('#toolbar [data-cmd="menu"]').getBoundingClientRect();
++		return rowMenu({ clientX: r.left, clientY: r.bottom + 2 });
++	}
+ 	if (cmd === "remove") return removeDialog();
+ 	if (cmd === "tags") return assignTagsDialog();
+ 	act("/api/action", { action: cmd, hashes: hs });
+@@ -1756,7 +1871,7 @@
+ function addDialog(files = []) {
+ 	let picked = [...files];
+ 	const m = modal("Agregar torrents", form(
+-		frow("Archivos", `<div class="dropzone" id="add-drop">Arrastra archivos .torrent aquí o <u>elige archivos</u><input type="file" id="add-file" accept=".torrent,application/x-bittorrent" multiple hidden><div id="add-files"></div></div>`),
++		frow("Archivos", `<div class="dropzone" id="add-drop">${touchUI() ? "<u>Elige archivos .torrent</u>" : "Arrastra archivos .torrent aquí o <u>elige archivos</u>"}<input type="file" id="add-file" accept=".torrent,application/x-bittorrent" multiple hidden><div id="add-files"></div></div>`),
+ 		frow("Contenido", '<div id="add-content"></div>').replace('class="frow"', 'class="frow" id="add-content-row" hidden'),
+ 		frow("Enlaces magnet", `<textarea id="add-magnet" placeholder="magnet:?xt=urn:btih:…"></textarea><div class="hint">Enlaces magnet o URL de archivos .torrent, uno por línea.</div>`, "add-magnet"),
+ 		frow("Carpeta", folderPicker("add-dir", prefs.lastDir) + `<div class="hint">Vacío = la carpeta predeterminada de rTorrent.</div><div class="hint" id="add-space"></div>`),
+@@ -1998,7 +2113,7 @@
+ 
+ // A folder field with a browser of the folders on the computer running Tablero.
+ function folderPicker(id, value) {
+-	return `<div class="fp"><div class="row"><input type="text" id="${id}" value="${esc(value || "")}" placeholder="/ruta/a/la/carpeta" style="flex:1">` +
++	return `<div class="fp"><div class="row"><input type="text" id="${id}" value="${esc(value || "")}" placeholder="${isAndroid() ? "/storage/emulated/0/Download/torrents" : "/ruta/a/la/carpeta"}" style="flex:1">` +
+ 		`<button type="button" class="btn" data-fp-browse="${id}">Examinar…</button></div><div class="fp-panel" data-fp-for="${id}" hidden></div></div>`;
+ }
+ // Puts a path in the field scrolled to its end, where the folder's own name is.
+@@ -2062,6 +2177,11 @@
  async function openFolder(hash, index, dir) {
  	try {
  		const r = await api("/api/open-folder", index !== undefined ? { hash, index } : dir !== undefined ? { hash, dir } : { hash });
@@ -269,25 +732,192 @@
  		toast(r.demo ? `En el modo demo no hay carpetas reales: se abriría ${r.folder}` : `Abriendo ${r.folder}`);
  	} catch (e) { toast(e.message, true); }
  }
-@@ -2190,7 +2228,7 @@
+@@ -2225,7 +2345,7 @@
+ 			<label class="check"><input type="checkbox" id="op-tint"> Teñir las filas con el color de su primera etiqueta</label>
+ 			<label class="check"><input type="checkbox" id="op-tagbar"> Mostrar la barra de etiquetas sobre la lista</label></div>`),
+ 		frow("Filtro", '<select id="op-mode"><option value="any">Mostrar torrents con cualquiera de las etiquetas elegidas</option><option value="all">Mostrar solo torrents con todas las etiquetas elegidas</option></select>' +
+-			'<div class="hint">Cuando filtras por varias etiquetas a la vez (Ctrl+clic).</div>', "op-mode"),
++			`<div class="hint">Cuando filtras por varias etiquetas a la vez (${multiTagHow()}).</div>`, "op-mode"),
+ 		frow("Unidades", `<span class="seg">${[["bin", "Binarias: KiB, MiB, GiB"], ["dec", "Decimales: KB, MB, GB"]].map(([v, n]) =>
+ 			`<label><input type="radio" name="op-units" value="${v}"${prefs.units === v ? " checked" : ""}><span>${n}</span></label>`).join("")}</span>` +
+ 			'<div class="hint">Para tamaños, velocidades y límites. Binarias: 1 KiB = 1024 bytes, como cuenta rTorrent. Decimales: 1 KB = 1000 bytes, como los discos y la mayoría de las páginas.</div>'),
+@@ -2233,9 +2353,9 @@
  		windowOptionsHTML(),
  		frow("rTorrent", toolBtn("power", "Apagar rTorrent…", 'id="op-shutdown"') +
  			'<div class="hint">Lo cierra de forma normal: guarda la sesión y avisa a los rastreadores.</div>' +
 -			'<div class="cmd-list">Para volver a encenderlo:' + cmdHTML(START_CMD) + '</div>'),
 +			'<div class="cmd-list">Para volver a encenderlo: ' + rtorrentCmdHTML("start") + '</div>'),
  		frow("Respaldo", toolBtn("archive", "Respaldo y restauración…", 'id="op-backup"') +
- 			'<div class="hint">Para reinstalar el sistema o llevar todo a otro PC: etiquetas, opciones y los torrents de rTorrent con su avance.</div>'),
+-			'<div class="hint">Para reinstalar el sistema o llevar todo a otro PC: etiquetas, opciones y los torrents de rTorrent con su avance.</div>'),
++			`<div class="hint">${isAndroid() ? "Para cambiar de teléfono/tableta o pasar todo a un PC" : "Para reinstalar el sistema o llevar todo a otro PC"}: etiquetas, opciones y los torrents de rTorrent con su avance.</div>`),
  		frow("Red", `<label class="check"><input type="checkbox" id="op-lan"> Permitir abrir Tablero desde otros equipos de la red</label>
-@@ -2250,7 +2288,7 @@
- 			`<div>${net.listening ? `Ahora se abre desde la red en <b>${esc(url)}</b>${net.password ? "" : ", sin contraseña"}.` : "Ahora solo se abre en este equipo."}</div>` +
- 			(net.fixed ? `<div class="hint">Tablero se inició con <code>--bind ${esc(net.fixed)}</code>, que manda sobre esta opción.</div>` : "") +
- 			'<div class="hint">Desde otro equipo, el navegador pide la contraseña (el usuario puede ser cualquiera). En este equipo no se pide. Viaja sin cifrar: úsalo solo en tu red de casa.</div>' +
+ 			<div class="pw-row"><input type="password" id="op-pw" autocomplete="new-password" spellcheck="false"></div>
+ 			<div id="op-net"></div>`, "op-lan"),
+@@ -2255,7 +2375,7 @@
+ 				if (net && net.local && (lan !== net.lan || pw)) {
+ 					try {
+ 						const r = await api("/api/access", { lan, password: pw });
+-						toast(r.restart ? (lan ? "Tablero se reinicia para abrirse a la red…" : "Tablero se reinicia para escuchar solo en este equipo…") :
++						toast(r.restart ? (lan ? "Tablero se reinicia para abrirse a la red…" : `Tablero se reinicia para escuchar solo en ${thisDevice()}…`) :
+ 							pw ? "Contraseña guardada" : "Guardado");
+ 					} catch (e) { toast(e.message, true); return false; }
+ 				}
+@@ -2289,11 +2409,12 @@
+ 		pwIn.placeholder = net.password ? "Contraseña (vacío = no cambiarla)" : "Contraseña (al menos 6 caracteres)";
+ 		pwIn.disabled = lanBox.disabled = !net.local;
+ 		pwIn.hidden = !lanBox.checked && !net.password;
+-		netInfo.innerHTML = !net.local ? '<div class="hint">Solo se cambia en el equipo donde corre Tablero.</div>' :
+-			`<div>${net.listening ? `Ahora se abre desde la red en <b>${esc(url)}</b>${net.password ? "" : ", sin contraseña"}.` : "Ahora solo se abre en este equipo."}</div>` +
+-			(net.fixed ? `<div class="hint">Tablero se inició con <code>--bind ${esc(net.fixed)}</code>, que manda sobre esta opción.</div>` : "") +
+-			'<div class="hint">Desde otro equipo, el navegador pide la contraseña (el usuario puede ser cualquiera). En este equipo no se pide. Viaja sin cifrar: úsalo solo en tu red de casa.</div>' +
 -			`<div class="cmd-list">Si usas el cortafuegos ufw:${cmdHTML(`sudo ufw allow ${net.port}/tcp`)}</div>`;
++		netInfo.innerHTML = !net.local ? `<div class="hint">Solo se cambia en ${isAndroid() ? "el teléfono/tableta" : "el equipo"} donde corre Tablero.</div>` :
++			`<div>${net.listening ? `Ahora se abre desde la red en <b>${esc(url)}</b>${net.password ? "" : ", sin contraseña"}.` : `Ahora solo se abre en ${thisDevice()}.`}</div>` +
++			(net.fixed && !isAndroid() ? `<div class="hint">Tablero se inició con <code>--bind ${esc(net.fixed)}</code>, que manda sobre esta opción.</div>` : "") +
++			`<div class="hint">Desde otro equipo, el navegador pide la contraseña (el usuario puede ser cualquiera). En ${thisDevice()} no se pide. Viaja sin cifrar: úsalo solo en tu red de casa.</div>` +
++			(isAndroid() ? '<div class="hint">Funciona con wifi y mientras la app de Tablero está activa.</div>' : "") +
 +			ufwHTML([`${net.port}/tcp`]);
  	};
  	lanBox.onchange = showNet;
  	fetch("/api/access").then((r) => r.json()).then((j) => { net = j; lanBox.checked = j.lan; showNet(); }).catch(() => { netInfo.textContent = ""; });
-@@ -2389,7 +2427,7 @@
+@@ -2308,12 +2429,16 @@
+ 	try { info = await api("/api/backups"); } catch (e) { return toast(e.message, true); }
+ 	const m = modal("Respaldo y restauración", form(
+ 		frow("Carpeta", folderPicker("bk-dir", info.folder || "") +
+-			'<div class="hint">Donde se guardan los respaldos. Mejor en otro disco o en uno externo, para que sobrevivan a una reinstalación.</div>', "bk-dir"),
++			`<div class="hint">${isAndroid() ? "Donde se guardan los respaldos. Para que sobrevivan a un cambio de teléfono/tableta, guarda una copia fuera de él con Exportar (en el PC o en la nube)." :
++				"Donde se guardan los respaldos. Mejor en otro disco o en uno externo, para que sobrevivan a una reinstalación."}</div>`, "bk-dir"),
+ 		frow("Automático", seg("bkevery", [["never", "Nunca"], ["daily", "Diario"], ["weekly", "Semanal"]], info.every) +
+ 			` <span class="num-in">guardar los últimos <input type="number" id="bk-keep" min="1" max="100" value="${info.keep}"></span>` +
+ 			'<div class="hint">Tablero hace el respaldo solo mientras está corriendo, y borra los automáticos más antiguos.</div>'),
+ 		frow("Respaldos", '<div id="bk-list"></div>' +
+ 			`<div class="add-tools">${toolBtn("archive", "Crear respaldo ahora", 'id="bk-now"')}${toolBtn("rotate-ccw", "Restaurar el elegido…", 'id="bk-restore"')}</div>` +
++			`<div class="add-tools">${toolBtn("download", "Exportar el elegido…", 'id="bk-export"')}${toolBtn("upload", "Importar…", 'id="bk-import"')}` +
++			'<input type="file" id="bk-file" accept=".zip,application/zip" hidden></div>' +
++			'<div class="hint">Exportar guarda una copia del respaldo donde elijas. Importar trae un respaldo de otro equipo a esta carpeta y lo abre para restaurarlo.</div>' +
+ 			`<div class="hint">Incluye: ${BACKUP_HAS}</div>`)),
+ 		[{ label: "Cerrar" }, {
+ 			label: "Guardar", cls: "primary",
+@@ -2331,7 +2456,7 @@
+ 			files.map((f) => `<tr><td><input type="radio" name="bk-pick" value="${esc(f.path)}"${f.path === chosen ? " checked" : ""}></td>` +
+ 				`<td>${esc(date(f.time))}</td><td>${size(f.size)}</td></tr>`).join("") + "</tbody></table>" :
+ 			'<div class="dimtxt">No hay respaldos en esta carpeta.</div>';
+-		$("#bk-restore", m).disabled = !files.length;
++		$("#bk-restore", m).disabled = $("#bk-export", m).disabled = !files.length;
+ 	};
+ 	list(info.files);
+ 	const reload = async () => {
+@@ -2362,6 +2487,81 @@
+ 			btn.disabled = false;
+ 		}
+ 		if (e.target.closest("#bk-restore") && chosen) restoreDialog(chosen);
++		if (e.target.closest("#bk-export") && chosen) exportBackup(chosen);
++		if (e.target.closest("#bk-import")) $("#bk-file", m).click();
++	});
++	$("#bk-file", m).addEventListener("change", async (e) => {
++		const file = e.target.files[0];
++		e.target.value = "";
++		if (!file) return;
++		const btn = $("#bk-import", m);
++		btn.disabled = true;
++		toast("Importando " + file.name + "…");
++		try {
++			const r = await importBackup(file, $("#bk-dir", m).value.trim());
++			chosen = r.path;
++			await reload();
++			chosen = r.path;
++			$$('input[name="bk-pick"]', m).forEach((x) => (x.checked = x.value === r.path));
++			restoreDialog(r.path);
++		} catch (err) { toast(err.message, true); }
++		btn.disabled = false;
++	});
++}
++
++// A copy of a backup wherever the person wants it: the Android app's "Guardar como"
++// (TableroAndroid.exportFile), or the browser's download.
++function exportBackup(path) {
++	if (androidCan("exportFile")) return window.TableroAndroid.exportFile(path);
++	const a = document.createElement("a");
++	a.href = "/api/backup-file?path=" + encodeURIComponent(path);
++	a.download = path.split("/").pop();
++	document.body.append(a);
++	a.click();
++	a.remove();
++}
++
++// A backup .zip from elsewhere, sent as it is (it may be larger than the JSON limit).
++async function importBackup(file, folder) {
++	const r = await fetch("/api/backup-import?" + new URLSearchParams({ folder, name: file.name }), {
++		method: "POST", body: file, headers: { "Content-Type": "application/zip", "X-Tablero": "1" },
++	});
++	const data = await r.json().catch(() => ({ error: "Respuesta inválida (" + r.status + ")" }));
++	if (!r.ok || data.error) throw new Error(data.error || r.statusText);
++	return data;
++}
++
++// Android, the first time: where the backups go (a phone or tablet has no second disk to
++// suggest, and its own folder is lost if the app is uninstalled).
++async function firstBackupFolder() {
++	if (!isAndroid() || prefs.backupAsked || modalOpen()) return;
++	let info;
++	try { info = await api("/api/backups"); } catch { return; }
++	if (info.chosen) { prefs.backupAsked = true; savePrefs(); return; }
++	if (modalOpen()) return;
++	let every = "weekly";
++	const m = modal("Respaldos de Tablero", form(
++		frow("Carpeta", folderPicker("fb-dir", info.folder || "") +
++			'<div class="hint">Dónde guardar los respaldos: tus etiquetas, opciones y los torrents con su avance. Elige una carpeta que no se borre al desinstalar la app; Download o Documents sirven.</div>', "fb-dir"),
++		frow("Automático", seg("fbevery", [["never", "Nunca"], ["daily", "Diario"], ["weekly", "Semanal"]], every) +
++			'<div class="hint">Se cambia después en ⚙ Opciones → Respaldo, donde también puedes exportar e importar respaldos.</div>')),
++		[{ label: "Ahora no", run: () => { prefs.backupAsked = true; savePrefs(); } }, {
++			label: "Guardar", cls: "primary",
++			run: async () => {
++				try {
++					await api("/api/backup-settings", { folder: $("#fb-dir", m).value.trim(), every, keep: info.keep || 5 });
++				} catch (e) { toast(e.message, true); return false; }
++				prefs.backupAsked = true;
++				savePrefs();
++				toast("Carpeta de respaldos guardada");
++			},
++		}]);
++	wireFolderPickers(m);
++	m.addEventListener("click", (e) => {
++		const b = e.target.closest("[data-fbevery]");
++		if (!b) return;
++		every = b.dataset.fbevery;
++		$$("[data-fbevery]", m).forEach((x) => x.classList.toggle("on", x === b));
+ 	});
+ }
+ 
+@@ -2374,14 +2574,15 @@
+ 		["tags", "Etiquetas y logos", info.has.tags, info.has.tags],
+ 		["prefs", "Preferencias de la interfaz (columnas, tema, filtros…)", info.has.prefs, info.has.prefs],
+ 		["access", "Acceso desde la red y su contraseña", false, info.has.access],
+-		["rc", "rtorrent.rc <span class=\"dimtxt\">(reemplaza el de este equipo; se guarda una copia)</span>", false, info.has.rc],
++		["rc", `rtorrent.rc <span class="dimtxt">(reemplaza el de ${thisDevice()}; se guarda una copia${isAndroid() ? ". No lo marques si el respaldo viene de un PC: sus rutas y su conexión con rTorrent no sirven aquí" : ""})</span>`, false, info.has.rc],
+ 	];
+ 	const m = modal("Restaurar respaldo", form(
+ 		frow("Respaldo", `<div class="cur-loc">${esc(path.split("/").pop())}</div><div class="hint">Creado el ${esc(created)} en el equipo <b>${esc(info.host || "?")}</b> con Tablero ${esc(info.version || "")}: ${info.torrents} torrents.</div>`),
+ 		frow("Qué restaurar", `<div class="opt-rules">${parts.map(([k, label, on, avail]) =>
+ 			`<label class="check"><input type="checkbox" data-part="${k}"${on && avail ? " checked" : ""}${avail ? "" : " disabled"}> ${label}</label>`).join("")}</div>`),
+-		frow("Carpetas", `<div class="rs-map"><span>Cambiar</span><input type="text" id="rs-from" placeholder="/ruta/en/el/respaldo" spellcheck="false"><span>por</span><input type="text" id="rs-to" placeholder="/ruta/en/este/equipo" spellcheck="false"></div>` +
+-			'<div id="rs-folders"></div><div class="hint">Si en este equipo los discos están montados en otro lugar, cambia el comienzo de las rutas. ' + mark("good") + ' = los datos están ahí.</div>')),
++		frow("Carpetas", `<div class="rs-map"><span>Cambiar</span><input type="text" id="rs-from" placeholder="/ruta/en/el/respaldo" spellcheck="false"><span>por</span><input type="text" id="rs-to" placeholder="${isAndroid() ? "/storage/emulated/0/Download/torrents" : "/ruta/en/este/equipo"}" spellcheck="false"></div>` +
++			'<div id="rs-folders"></div><div class="hint">' + (isAndroid() ? "Si el respaldo viene de un PC, cambia el comienzo de las rutas, por ejemplo /media/datos/Torrents por /storage/emulated/0/Download/torrents. " :
++				"Si en este equipo los discos están montados en otro lugar, cambia el comienzo de las rutas. ") + mark("good") + ' = los datos están ahí.</div>')),
+ 		[{ label: "Cancelar" }, {
+ 			label: "Restaurar", cls: "primary",
+ 			run: async () => {
+@@ -2398,7 +2599,7 @@
+ 			},
+ 		}]);
+ 	const folders = (fs) => {
+-		$("#rs-folders", m).innerHTML = fs.length ? `<table class="showgrid rs-table"><thead><tr><th>En el respaldo</th><th>En este equipo</th><th>Torrents</th></tr></thead><tbody>` +
++		$("#rs-folders", m).innerHTML = fs.length ? `<table class="showgrid rs-table"><thead><tr><th>En el respaldo</th><th>${isAndroid() ? "Aquí" : "En este equipo"}</th><th>Torrents</th></tr></thead><tbody>` +
+ 			fs.map((f) => `<tr><td><code>${pathBreaks(f.from)}</code></td><td><code>${pathBreaks(f.to)}</code></td>` +
+ 				`<td><span class="${f.found === f.count ? "ok" : f.found ? "" : "bad"}">${f.found === f.count ? mark("good") : f.found ? "" : mark("bad")} ${f.found} de ${f.count}</span></td></tr>`).join("") + "</tbody></table>" : "";
+ 	};
+@@ -2432,7 +2633,7 @@
  	const m = modal("Respaldo restaurado", form(
  		frow("Resultado", `<ul class="rs-done">${lines.map((x) => `<li>${x}</li>`).join("") || "<li>No había nada que restaurar.</li>"}</ul>`),
  		restart ? frow("rTorrent", toolBtn("power", "Apagar rTorrent…", 'id="rs-shutdown"') +
@@ -296,7 +926,7 @@
  		[{ label: "Cerrar", cls: "primary", run: () => { render(); refresh(); } }]);
  	$("#rs-shutdown", m)?.addEventListener("click", shutdownDialog);
  }
-@@ -2440,7 +2478,7 @@
+@@ -2483,7 +2684,7 @@
  		s.incoming_seen ? `Ninguna ahora; la última hace ${eta(Math.max(60, Math.round(Date.now() / 1000 - s.incoming_seen)))}` : "Ninguna desde que se inició Tablero";
  	const m = modal("Estado del puerto", form(
  		frow("Puerto", `<div>${s.port || "?"} (TCP y UDP)${s.port_open ? "" : " · rTorrent no lo tiene abierto"}</div>` +
@@ -305,16 +935,18 @@
  			'<div class="hint">Por este puerto llegan las conexiones de otros pares. Si está cerrado igual puedes bajar, pero conectas con menos pares.</div>'),
  		frow("Cambiar puerto", `<div class="port-change"><input type="number" id="port-new" min="1024" max="65535" value="${portNext(s) || s.port || ""}">` +
  			`${toolBtn("check", "Cambiar", 'id="port-set"')}</div><div id="port-set-result"></div>` +
-@@ -2449,7 +2487,7 @@
+@@ -2491,8 +2692,8 @@
+ 		frow("Conexiones entrantes", `<div>${seen}</div><div class="hint">Si llegan pares desde internet, el puerto está abierto. Si no llega ninguno, puede estar cerrado o simplemente no hay pares buscando.</div>`),
  		frow("Prueba", `${toolBtn("search", "Probar puerto", 'id="port-test"')}<div id="port-result" class="port-result ${cls}">Estado: ${text}</div>` +
  			'<div class="hint">Le pide a ifconfig.co que intente conectarse a tu IP pública en este puerto. Solo se envía el número de puerto. Tablero hace esta prueba solo al iniciar.</div>'),
- 		frow("Si está cerrado", `<div id="port-help">En el router, reenvía el puerto ${fwd} (TCP y UDP) a la IP local de este equipo<span id="port-ip"></span>. Con VPN, el puerto debe abrirse en la VPN.</div>` +
+-		frow("Si está cerrado", `<div id="port-help">En el router, reenvía el puerto ${fwd} (TCP y UDP) a la IP local de este equipo<span id="port-ip"></span>. Con VPN, el puerto debe abrirse en la VPN.</div>` +
 -			`<div class="cmd-list">Si usas el cortafuegos ufw:${cmdHTML(`sudo ufw allow ${fwd}/tcp`)}${cmdHTML(`sudo ufw allow ${fwd}/udp`)}</div>`)),
++		frow("Si está cerrado", `<div id="port-help">En el router, reenvía el puerto ${fwd} (TCP y UDP) a la IP local de ${thisDevice()}<span id="port-ip"></span>. Con VPN, el puerto debe abrirse en la VPN.${isAndroid() ? " Con datos móviles casi nunca se puede abrir: la compañía comparte tu IP pública con otros clientes." : ""}</div>` +
 +			ufwHTML([`${fwd}/tcp`, `${fwd}/udp`]))),
  		[{ label: "Cerrar", cls: "primary" }]);
  	fetch("/api/local-ip").then((r) => r.json()).then((j) => { if (j.ip) $("#port-ip", m).textContent = ` (${j.ip})`; }).catch(() => {});
  	const setPort = async () => {
-@@ -2461,7 +2499,7 @@
+@@ -2504,7 +2705,7 @@
  			const line = cmdHTML(r.line);
  			out.className = "port-result " + (r.saved ? "ok" : "warn");
  			out.innerHTML = r.demo ? `Modo demo: aquí se guardaría el puerto ${r.port} en la configuración de rTorrent.` :
@@ -323,7 +955,7 @@
  				r.rc ? `No tengo permiso para escribir en <code>${esc(r.rc)}</code>. Cambia ahí la línea del puerto (o agrégala) por: ${line} y luego reinicia rTorrent.` :
  				`No encontré el archivo de configuración de rTorrent. En él, cambia la línea del puerto (o agrégala) por: ${line} y luego reinicia rTorrent.`;
  			refresh();
-@@ -2492,7 +2530,7 @@
+@@ -2535,7 +2736,7 @@
  			'<div class="hint">Tablero sigue abierto, pero sin conexión hasta que rTorrent vuelva.</div>'),
  		...(busy.length ? [frow("En curso", `<div class="warn">${mark("warn")} Reubicar datos sigue trabajando en ${busy.length === 1 ? esc(busy[0].name) : busy.length + " torrents"}. ` +
  			"Si apagas ahora, los archivos terminan de moverse, pero no se verifican ni se reanudan: al encender rTorrent, usa Verificar datos e Inicia el torrent.</div>")] : []),
@@ -332,7 +964,80 @@
  		[{ label: "Cancelar" }, {
  			label: "Apagar", cls: "danger",
  			run: async () => {
-@@ -2726,7 +2764,7 @@
+@@ -2558,6 +2759,27 @@
+ 	render();
+ }
+ 
++// Dragging a column edge or a splitter: the mouse keeps its mouse events; a finger uses
++// pointer events (touch-action: none on those handles keeps the page from scrolling instead).
++function onDragStart(el, fn) {
++	el.addEventListener("mousedown", fn);
++	el.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") fn(e); });
++}
++function track(e, move, done) {
++	const [mv, end] = e.type === "pointerdown" ? ["pointermove", "pointerup"] : ["mousemove", "mouseup"];
++	const up = () => {
++		removeEventListener(mv, move);
++		removeEventListener(end, up);
++		removeEventListener("pointercancel", up);
++		done();
++	};
++	addEventListener(mv, move);
++	addEventListener(end, up);
++	if (mv === "pointermove") addEventListener("pointercancel", up);
++}
++// After a drag the click that follows must not sort the column; a finger's comes later.
++const clickAfter = (e) => (e.type === "pointerdown" ? 400 : 0);
++
+ function wire() {
+ 	$("#st-port").addEventListener("click", portDialog);
+ 	$("#toolbar").addEventListener("click", (e) => {
+@@ -2702,7 +2924,7 @@
+ 		savePrefs();
+ 		renderTable();
+ 	});
+-	thead.addEventListener("mousedown", (e) => {
++	onDragStart(thead, (e) => {
+ 		if (!e.target.classList.contains("grip")) return;
+ 		e.preventDefault();
+ 		e.stopPropagation();
+@@ -2710,20 +2932,16 @@
+ 		const x0 = e.clientX, w0 = c.w, colEl = $$("#torrents col")[visibleCols().indexOf(c)];
+ 		th.draggable = false;
+ 		const move = (ev) => { c.w = Math.max(40, w0 + ev.clientX - x0); colEl.style.width = c.w + "px"; };
+-		const up = () => {
+-			removeEventListener("mousemove", move);
+-			removeEventListener("mouseup", up);
++		track(e, move, () => {
+ 			th.draggable = true;
+ 			state.resized = true;
+-			setTimeout(() => (state.resized = false), 0);
++			setTimeout(() => (state.resized = false), clickAfter(e));
+ 			savePrefs();
+-		};
+-		addEventListener("mousemove", move);
+-		addEventListener("mouseup", up);
++		});
+ 	});
+ 
+ 	// Splitters.
+-	$$("[data-split]").forEach((s) => s.addEventListener("mousedown", (e) => {
++	$$("[data-split]").forEach((s) => onDragStart(s, (e) => {
+ 		e.preventDefault();
+ 		const kind = s.dataset.split, x0 = e.clientX, y0 = e.clientY, w0 = prefs.sidebarW, h0 = prefs.detailsH;
+ 		const move = (ev) => {
+@@ -2731,9 +2949,7 @@
+ 			else prefs.detailsH = Math.max(32, Math.min(innerHeight - 200, h0 - (ev.clientY - y0)));
+ 			applyLayout();
+ 		};
+-		const up = () => { removeEventListener("mousemove", move); removeEventListener("mouseup", up); savePrefs(); };
+-		addEventListener("mousemove", move);
+-		addEventListener("mouseup", up);
++		track(e, move, savePrefs);
+ 	}));
+ 
+ 	$(".tabs").addEventListener("click", (e) => {
+@@ -2769,7 +2985,7 @@
  		if (!tr || !h) return;
  		e.preventDefault();
  		const run = tr.dataset.dirpath !== undefined ? () => openFolder(h, undefined, tr.dataset.dirpath) : () => openFolder(h, +tr.dataset.file);
@@ -341,7 +1046,7 @@
  	});
  	$("#details-body").addEventListener("submit", (e) => {
  		e.preventDefault();
-@@ -2734,6 +2772,13 @@
+@@ -2777,6 +2993,13 @@
  		if (t && e.target.id === "opt-form") saveOptions(t);
  	});
  	document.addEventListener("click", (e) => {
@@ -355,12 +1060,85 @@
  		const b = e.target.closest("[data-copy-cmd]");
  		if (b) copy(b.dataset.copyCmd);
  	});
-@@ -2957,6 +3002,8 @@
+@@ -2792,7 +3015,7 @@
+ 		renderDetails();
+ 	});
+ 	// Column widths in Archivos, Pares and Trackers: drag the edge of a title.
+-	$("#details-body").addEventListener("mousedown", (e) => {
++	onDragStart($("#details-body"), (e) => {
+ 		const g = e.target.closest("[data-tgrip]");
+ 		if (!g) return;
+ 		e.preventDefault();
+@@ -2811,17 +3034,13 @@
+ 			$(`col[data-col="${col}"]`, table).style.width = w[col] + "px";
+ 			table.style.width = Object.values(w).reduce((n, x) => n + x, 0) + "px";
+ 		};
+-		const up = () => {
+-			removeEventListener("mousemove", move);
+-			removeEventListener("mouseup", up);
++		track(e, move, () => {
+ 			state.subResize = false;
+ 			state.resized = true;
+-			setTimeout(() => (state.resized = false), 0);
++			setTimeout(() => (state.resized = false), clickAfter(e));
+ 			savePrefs();
+ 			renderDetails();
+-		};
+-		addEventListener("mousemove", move);
+-		addEventListener("mouseup", up);
++		});
+ 	});
+ 	$("#details-body").addEventListener("click", (e) => {
+ 		if (e.target.closest("#opt-reset")) { state.optsHash = null; return renderDetails(); }
+@@ -2863,6 +3082,7 @@
+ 	});
+ 
+ 	document.addEventListener("mouseover", (e) => {
++		if (touchUI()) return;   // a tap also sends mouseover; on touch the tap shows it (wireTouchTips)
+ 		const el = e.target.closest?.("[data-tip]");
+ 		if (!el) return;
+ 		const r = el.getBoundingClientRect();
+@@ -3000,9 +3220,19 @@
  			}
  		} catch { /* keep the defaults */ }
  	}
 +	// Known before rTorrent answers, for the "Sin conexión con rTorrent" line.
 +	try { state.platform = (await api("/api/access")).platform || "desktop"; } catch { /* desktop */ }
  	applyLayout();
++	if (touchUI()) {
++		// No keyboard on a touch screen: the shortcuts are left out of the button names.
++		$$("#toolbar [title]").forEach((b) => (b.title = b.title.replace(/\s*\([^)]*\)$/, "")));
++		$("#search").placeholder = "Filtrar por nombre…";
++		wireTouchTips();
++		wireTwoFingerReload();
++	}
  	wire();
  	try { state.tagConf = await api("/api/tags"); } catch { /* keep defaults */ }
+ 	render();
+ 	refresh();
++	setTimeout(firstBackupFolder, 1500);
+ })();
+diff -ruN escritorio/web/icons.js android/web/icons.js
+--- escritorio/web/icons.js	2026-11-24 18:47:32.676779834 +0000
++++ android/web/icons.js	2026-11-24 18:53:14.895360556 +0000
+@@ -98,5 +98,8 @@
+ "triangle-alert": "<path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\" /><path d=\"M12 9v4\" /><path d=\"M12 17h.01\" />",
+ "arrow-right": "<path d=\"M5 12h14\" /><path d=\"m12 5 7 7-7 7\" />",
+ "x": "<path d=\"M18 6 6 18\" /><path d=\"m6 6 12 12\" />",
+-"ban": "<circle cx=\"12\" cy=\"12\" r=\"10\" /><path d=\"m4.9 4.9 14.2 14.2\" />"
++"ban": "<circle cx=\"12\" cy=\"12\" r=\"10\" /><path d=\"m4.9 4.9 14.2 14.2\" />",
++"ellipsis-vertical": "<circle cx=\"12\" cy=\"12\" r=\"1\" /><circle cx=\"12\" cy=\"5\" r=\"1\" /><circle cx=\"12\" cy=\"19\" r=\"1\" />",
++"download": "<path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\" /><path d=\"m7 10 5 5 5-5\" /><path d=\"M12 15V3\" />",
++"upload": "<path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\" /><path d=\"m17 8-5-5-5 5\" /><path d=\"M12 3v12\" />"
+ });
+diff -ruN escritorio/web/index.html android/web/index.html
+--- escritorio/web/index.html	2026-11-24 18:47:32.677178144 +0000
++++ android/web/index.html	2026-11-24 18:53:14.895565892 +0000
+@@ -24,6 +24,7 @@
+     <span class="down">↓ <b id="sp-down">0 B/s</b></span>
+     <span class="up">↑ <b id="sp-up">0 B/s</b></span>
+   </button>
++  <button data-cmd="menu" class="icon touch-only" title="Menú del torrent"><i data-icon="ellipsis-vertical"></i></button>
+   <button data-cmd="settings" class="icon" title="Opciones"><i data-icon="settings"></i></button>
+ </header>
+ 

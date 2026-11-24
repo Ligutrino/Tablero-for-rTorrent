@@ -2,9 +2,10 @@
 
 Este paquete es para el proyecto que porta rTorrent a Android y quiere usar **Tablero para rTorrent** como interfaz. Se puede leer sin conocer el proyecto de escritorio.
 
-- Base: Tablero 0.9.2 (escritorio, Linux), con los arreglos para rTorrent 0.16 que salieron al probarlo en Termux.
-- Esta variante: **0.9.2-android.1**, en `fuente/`. Es una rama aparte: la versión de escritorio no cambia.
-- `android.patch`: todas las diferencias con la versión de escritorio (2 archivos, unas 350 líneas). Sirve para llevar los cambios a cada versión nueva de escritorio (`patch -p1 < android.patch` dentro de la carpeta de la versión nueva).
+- Base: Tablero 0.9.2 (escritorio, Linux) en desarrollo: los arreglos para rTorrent 0.16 que salieron al probarlo en Termux y el gráfico de velocidad general en Límites.
+- Esta variante: **0.9.2-android.3**, en `fuente/`. Es una rama aparte: la versión de escritorio no cambia.
+- `android.patch`: todas las diferencias con la versión de escritorio (5 archivos: tablero.py y web/).
+- `CAMBIOS-ANDROID.md`: qué trae cada versión de la variante. Sirve para llevar los cambios a cada versión nueva de escritorio (`patch -p1 < android.patch` dentro de la carpeta de la versión nueva).
 
 ## 0. Con el motor `:engine` (rtorrent 0.16.17 en modo daemon)
 
@@ -27,11 +28,11 @@ Pasos concretos:
 
 Cosas a coordinar con `:engine`:
 
-- **rtorrent.rc**: Tablero encuentra el .rc por el `-o import=` de la línea de comandos del daemon y cambia ahí la línea del puerto (Estado del puerto → Cambiar puerto). Si `:engine` vuelve a escribir el .rc en cada arranque, ese cambio se pierde: conviene que `:engine` no pise la línea `network.listen.port.range.set` si ya existe, o que lea el puerto de su propia configuración.
+- **rtorrent.rc**: Tablero encuentra el .rc por el `-o import=` de la línea de comandos del daemon, o el que le diga la app con `--rtorrent-rc RUTA` (lo mejor si `:engine` corre rTorrent dentro de su propio proceso), y cambia ahí la línea del puerto (Estado del puerto → Cambiar puerto). Si `:engine` vuelve a escribir el .rc en cada arranque, ese cambio se pierde: conviene que `:engine` no pise la línea `network.listen.port.range.set` si ya existe, o que lea el puerto de su propia configuración.
 - **Apagar rTorrent** desde Tablero (`system.shutdown.normal`): si `:engine` relanza el daemon solo cuando muere, Tablero no podrá apagarlo. Lo esperado: que `:engine` lo deje apagado hasta `startRtorrent()`.
 - **Descargas en el almacenamiento propio de la app**: funciona tal cual. "Carpeta" vacía en Agregar usa la predeterminada de rTorrent; pasar esa misma carpeta a `--archivos` para que Examinar… y los respaldos empiecen ahí. Abrir carpeta sobre una carpeta privada solo puede mostrar la ruta (ningún explorador la abre). Cuando se decida copiar o descargar a Descargas, `Reubicar datos` de Tablero ya mueve los archivos y apunta el torrent a la nueva carpeta.
 - **Dos clientes en el mismo socket** (`:engine` y Tablero): no hay problema; Tablero guarda lo suyo en `d.custom` con claves `tablero_tags`, `tablero_opts`, `tablero_pos`, que `:engine` no debe borrar.
-- **Notificación del servicio**: `:engine` ya tiene la suya. Si se quiere mostrar velocidades, avisos de descarga completa o botones Pausar/Reanudar todo, puede leerlos de `TorrentEngine` o de la API de Tablero (ver 6).
+- **Notificación del servicio**: `TableroAvisos` (en el módulo de ejemplo) toma la notificación de `:engine` por su ID y le pone velocidades, íconos de estado, Pausar todo, Reanudar todo y Salir, y avisa cada descarga completa (ver 6).
 
 ## 1. Cómo funciona
 
@@ -62,10 +63,33 @@ Con `--android` (o la variable de entorno `TABLERO_PLATAFORMA=android`):
 | Carpeta inicial de **Examinar…** y de los **respaldos** (`~`, `~/Respaldos de Tablero`) | El `~` de Termux o de una app es privado: ningún explorador de archivos lo ve. | La de `--archivos`; si no se da, `/storage/emulated/0` cuando se puede leer y escribir ahí. |
 | Ventana GTK, ícono en la bandeja, avisos de escritorio, `.deb`, servicio systemd, `apt install gir1.2-xapp-1.0` | Son de Linux de escritorio. | No se incluyen (la carpeta `packaging/` no está en este paquete). La sección ⚙ Opciones → Ventana solo aparece dentro de la ventana GTK, así que en Android no sale. Ver 6 para el equivalente. |
 
+| Textos que dicen "este equipo", "otro PC", "disco externo" | En Android es un teléfono o una tableta. | Dicen "este teléfono/tableta"; los respaldos hablan de cambiar de teléfono/tableta y de guardar una copia fuera con Exportar. Ejemplos de ruta con `/storage/emulated/0/Download/torrents`. |
+| ⚙ Opciones → Red | El aviso de `--bind` no aplica (los argumentos los pone la app). | Oculto. Se agrega que funciona con wifi y mientras la app está activa. |
+| Estado del puerto → Si está cerrado | Con datos móviles la compañía comparte la IP pública. | Lo explica. |
+| Restaurar respaldo | Un respaldo del PC trae rutas y un rtorrent.rc de PC. | La ayuda da un ejemplo de cambio de rutas de PC a Android; rtorrent.rc viene desmarcado y dice que no se marque si el respaldo viene de un PC. |
+| Carpeta de respaldos | No hay un segundo disco que sugerir, y la carpeta de la app se borra al desinstalar. | La primera vez que se abre Tablero pregunta dónde guardar los respaldos (y propone Semanal). "Ahora no" no vuelve a preguntar. |
+
+Respaldos, en ambos modos: **Exportar el elegido…** guarda una copia del respaldo donde el usuario quiera (en Android, con `TableroAndroid.exportFile`; en un navegador, como descarga) e **Importar…** trae un .zip de otro equipo a la carpeta de respaldos y abre Restaurar.
+
+### 2.1 Pantalla táctil
+
+Se activa sola cuando el puntero principal es un dedo (`(pointer: coarse)`), en la app o en el navegador del teléfono:
+
+- Botón de menú (tres puntos) en la barra de arriba: abre el menú del torrent elegido. El toque largo también lo abre.
+- En el menú de una etiqueta (toque largo): **Filtrar por esta etiqueta / Agregar al filtro / Quitar del filtro**, en vez de Ctrl+clic.
+- En el menú de los títulos de la lista: **Ajustar el ancho al texto** (en escritorio es el doble clic en el borde).
+- Los bordes de las columnas y los separadores de paneles se arrastran con el dedo, con una zona de toque más ancha.
+- No se nombran atajos de teclado (Ctrl+O, Supr, Ctrl+clic…), ni en los botones ni en los menús.
+- Agregar torrents dice "Elige archivos .torrent" en vez de "Arrastra…".
+- A ancho de teléfono, las dos velocidades van una sobre otra y Agregar queda como solo "+", para que todo quepa sin ensanchar la página.
+- Lo que con mouse sale al pasar por encima lleva al lado un botón "i" que lo muestra al tocarlo. El mapa de piezas y el gráfico de velocidad muestran el detalle del punto tocado.
+- Dos dedos deslizados hacia abajo recargan la página (con aviso "Suelta para recargar"). No interfiere con el desplazamiento de un dedo ni con el pellizco, que se hace con zoom de la WebView.
+
 Además (sirve en ambos modos, pero se agregó para Android):
 
 - `tablero.run(argv)` y `tablero.stop()`: para arrancar y detener el servidor desde otro programa (Chaquopy) sin pasar por la línea de comandos.
 - `--config CARPETA`: dónde guardar la configuración (por defecto `$XDG_CONFIG_HOME/tablero` o `~/.config/tablero`).
+- `--rtorrent-rc RUTA`: el rtorrent.rc de rTorrent, si Tablero no lo encuentra solo.
 - `--archivos CARPETA`: dónde empiezan Examinar… y los respaldos. Sin ella, en Android es `/storage/emulated/0` si la app tiene "Acceso a todos los archivos"; si no, la carpeta personal.
 - `window.tableroBack()`: para el botón Atrás de Android; cierra el menú o diálogo abierto y devuelve `true`, o `false` si no había ninguno.
 - `window.tableroAdd({...})`: abre "Agregar torrents" ya cargado (para cuando la app recibe un magnet o un .torrent desde otra app). Ver 5.
@@ -90,7 +114,7 @@ Para que Termux pueda escribir en `/storage/emulated/0`: `termux-setup-storage`.
 
 ### 3.2 App propia (recomendado): Kotlin + WebView + Chaquopy
 
-`ejemplo-modulo-ui/` trae este módulo armado, para copiar como `:ui-tablero`: `build.gradle.kts`, `TableroServidor.kt` (arranca y detiene tablero.py), `TableroActivity.kt` (WebView, selector de archivos, magnet y .torrent de otras apps, botón Atrás), `TableroPuente.kt` (`window.TableroAndroid`) y un fragmento del manifiesto. **No se ha compilado** (no hay SDK de Android aquí): los `TODO` marcan dónde llamar a `TorrentEngine` y las versiones de dependencias hay que alinearlas con el proyecto. Lo de abajo explica las partes.
+`ejemplo-modulo-ui/` trae este módulo armado, para copiar como `:ui-tablero`: `build.gradle.kts`, `TableroServidor.kt` (arranca y detiene tablero.py), `TableroActivity.kt` (WebView, pantalla de espera, selector de archivos, enlaces al navegador, recarga al volver, zoom, "Guardar como" de Exportar, magnet y .torrent de otras apps, botón Atrás), `TableroPuente.kt` (`window.TableroAndroid`), `TableroAvisos.kt` (notificación con velocidades, botones y "Descarga completa"), `res/drawable/` (íconos de la notificación) y un fragmento del manifiesto. **No se ha compilado** (no hay SDK de Android aquí): los `TODO` marcan dónde llamar a `TorrentEngine` y las versiones de dependencias hay que alinearlas con el proyecto. Lo de abajo explica las partes.
 
 Recomendación: **Chaquopy** (plugin de Gradle que mete un intérprete de Python en el APK). Tablero no usa nada fuera de la biblioteca estándar, así que no hay paquetes que compilar. Python 3.12 (Tablero se prueba con 3.12 y 3.13).
 
@@ -180,6 +204,7 @@ class TableroPuente(private val ctx: Context) {
     @JavascriptInterface fun openFolder(path: String) { /* abrir el explorador en esa carpeta */ }
     @JavascriptInterface fun startRtorrent() { /* arrancar el proceso de rTorrent */ }
     @JavascriptInterface fun restartRtorrent() { /* detener (system.shutdown.normal ya lo pidió Tablero, o matar) y arrancar */ }
+    @JavascriptInterface fun exportFile(path: String) { /* "Guardar como" (ACTION_CREATE_DOCUMENT) y copiar ese .zip */ }
 }
 ```
 
@@ -205,13 +230,17 @@ En escritorio, la ventana GTK pone un ícono en la bandeja (velocidades, Pausar/
 - Acciones: Pausar todo / Reanudar todo con `POST /api/action`: `{"action": "pause", "hashes": [...]}` y `{"action": "start", "hashes": [...]}` (start también reanuda). Todas las acciones: `start`, `stop`, `pause`, `recheck`, `remove` (con `"data": true` borra también los archivos), `priority` (con `"value"`: 0 a 3). Ver `RTorrentBackend.action` en tablero.py.
 - Aviso de descarga completa: guardar qué hashes tenían `complete: 0` y avisar cuando pasan a `1`.
 - Errores: torrents con `status == "error"` (el detalle está en `message`).
+- Íconos: `icono-notificacion/` trae los de la barra de estado para los tres estados (normal, con error, sin conexión), con el color de notificación de cada uno.
+
+Todo eso ya está en `ejemplo-modulo-ui/.../TableroAvisos.kt`: en el servicio, después de `startForeground`, `TableroAvisos(this, ID_NOTIFICACION) { detenerServicio() }.iniciar()`, y `detener()` en `onDestroy`. Mira cada 3 s con la pantalla encendida y cada 30 s apagada. "Descarga completa" sale solo para torrents que estaban bajando (no al agregar uno ya completo ni al verificar datos viejos), igual que en escritorio. Los botones llegan a `TableroAcciones` (receptor en el manifiesto). En Android 13+ `TableroActivity` pide el permiso de notificaciones.
+
+No hay opción de arrancar al encender el teléfono: el teléfono o la tableta casi siempre está encendido.
 
 ## 7. Mantenerlo vivo
 
 - **Servicio en primer plano** que arranca rTorrent y Tablero y muestra la notificación de 6. Android 14+ exige tipo: `dataSync` está limitado a 6 horas cada 24 en Android 15, así que para un cliente BitTorrent que siembra todo el día conviene `specialUse` (con `<property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Cliente BitTorrent"/>`). Si la app no va a Google Play, `specialUse` no tiene revisión.
 - `WakeLock` parcial mientras haya torrents activos y `WifiLock` (`WIFI_MODE_FULL_HIGH_PERF`), si no Android corta la red con la pantalla apagada.
 - Pedir quitar la app de la optimización de batería (`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`).
-- Arranque al encender: `BOOT_COMPLETED` → iniciar el servicio (opcional).
 - Al detener: `POST /api/shutdown` (rTorrent guarda la sesión y avisa a los rastreadores), esperar a que el proceso termine, luego `tablero.stop()`.
 - Si el sistema mata el proceso de la app, rTorrent (proceso hijo) muere también. Al volver, la sesión se recupera desde `session/`.
 
@@ -221,8 +250,8 @@ En escritorio, la ventana GTK pone un ícono en la bandeja (velocidades, Pausar/
   - Para descargar en `/storage/emulated/0/...` (visible para el usuario y otras apps): `MANAGE_EXTERNAL_STORAGE` ("Acceso a todos los archivos", el usuario lo activa en Ajustes). Es lo que usan las apps de este tipo instaladas fuera de Play.
   - Sin ese permiso, solo la carpeta propia de la app (`getExternalFilesDir()`, `/storage/emulated/0/Android/data/<paquete>/files`), que el usuario ve mal y se borra al desinstalar.
 - Tarjeta SD: el acceso de escritura directo está muy limitado; mejor solo almacenamiento interno al comienzo.
-- Otros: `INTERNET`, `ACCESS_NETWORK_STATE`, `ACCESS_WIFI_STATE`, `WAKE_LOCK`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS` (Android 13+), `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, `RECEIVE_BOOT_COMPLETED` (si arranca al encender).
-- La configuración de Tablero (`--config`) va en `filesDir/tablero`; los respaldos, por defecto en `/storage/emulated/0/Respaldos de Tablero` para que el usuario los pueda copiar.
+- Otros: `INTERNET`, `ACCESS_NETWORK_STATE`, `ACCESS_WIFI_STATE`, `WAKE_LOCK`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS` (Android 13+), `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`.
+- La configuración de Tablero (`--config`) va en `filesDir/tablero`. Los respaldos: la primera vez Tablero pregunta la carpeta (propone `/storage/emulated/0/Respaldos de Tablero`, o la de `--archivos`); con Exportar se copian fuera.
 
 ## 9. Seguridad
 
@@ -245,7 +274,8 @@ Todo JSON. Los POST llevan `Content-Type: application/json` y `X-Tablero: 1`. Lo
 | `/api/access` | acceso desde la red, `ip`, `port`, `local`, `platform` |
 | `/api/dirs?path=P` | subcarpetas (para Examinar…) |
 | `/api/free-space?path=P` | `{path, free}` |
-| `/api/backups?folder=F` | respaldos existentes |
+| `/api/backups?folder=F` | respaldos existentes y su configuración; `chosen: false` si nadie eligió aún la carpeta |
+| `/api/backup-file?path=P` | el .zip de un respaldo, como descarga (Exportar en un navegador) |
 | `/api/local-ip` | `{ip}` |
 | `/logos/<id>.<ext>` | imagen de logo de una etiqueta |
 
@@ -270,6 +300,7 @@ Todo JSON. Los POST llevan `Content-Type: application/json` y `X-Tablero: 1`. Lo
 | `/api/shutdown` | `{}`: apaga rTorrent guardando la sesión |
 | `/api/tags`, `/api/logo`, `/api/prefs`, `/api/access` | guardar etiquetas, subir logo (`{data: base64}`), preferencias, acceso desde la red |
 | `/api/backup`, `/api/backup-settings`, `/api/restore-inspect`, `/api/restore` | respaldo y restauración |
+| `/api/backup-import?folder=F&name=N` | el .zip tal cual (`Content-Type: application/zip`, hasta 1 GB) → `{path, torrents}`; queda como `tablero-respaldo-<fecha>-importado.zip` y no se borra con los automáticos |
 
 ## 11. Pruebas hechas aquí
 
@@ -281,9 +312,26 @@ Con rTorrent 0.9.8 real en Linux (no hay Android en este entorno):
 - Modo escritorio (sin `--android`): igual que antes.
 - `android.patch` aplicado sobre la versión de escritorio da exactamente `fuente/`.
 
+En 0.9.2-android.2, con rTorrent 0.9.8 real y la interfaz en un Pixel 7 emulado (Chromium, pantalla táctil):
+
+- Primer inicio: pregunta la carpeta de respaldos; con "Guardar" o "Ahora no" no vuelve a preguntar al recargar.
+- Botón de menú del torrent, menú sin atajos, Filtrar por esta etiqueta desde el toque largo, Ajustar el ancho al texto, separador de paneles arrastrado con el dedo (230 → 310 px).
+- ⚙ Opciones: textos de teléfono/tableta, wifi, sin ufw, sin `--bind`, sin Ctrl.
+- Respaldos: Crear, Exportar (descarga) e Importar el mismo .zip, que abre Restaurar con la ayuda de rutas de PC a Android. Importar un archivo que no es respaldo da error; `/api/backup-file` no entrega otros archivos.
+- Estado del puerto con el aviso de datos móviles; Agregar con "Elige archivos .torrent".
+- El gráfico de Límites se ve a ancho de teléfono.
+- La misma interfaz con mouse en 1280 px: sin botón de menú, atajos visibles, bordes de columna arrastrables con el mouse.
+- `tablero.run(...)`/`stop()` en un hilo, con `--rtorrent-rc`.
+
+En 0.9.2-android.3, igual: cada "i" muestra y cierra su texto sin ordenar la columna; tocar otra parte lo cierra; el gráfico de velocidad muestra el punto tocado; dos dedos hacia abajo recargan, un tramo corto no, y un pellizco no. Con mouse en 1280 px no hay ningún "i" y el texto sigue saliendo al pasar el mouse.
+
+Los archivos Kotlin de `ejemplo-modulo-ui/` no se han compilado.
+
 Falta probar en un teléfono: WebView real, Chaquopy, rTorrent 0.16 compilado para Android, permisos de almacenamiento y el servicio en primer plano.
 
 ## 12. Lista de pasos para el proyecto Android
+
+Los pasos 3, 4 y 8 están detallados, con código, en `PENDIENTE-PORT.md`.
 
 1. Probar `fuente/tablero.py --android --scgi <socket>` contra el rtorrent 0.16.17 de la etapa `hosttest` (ver 0). Corregir aquí lo que falle del XML-RPC de tinyxml2.
 2. Copiar `ejemplo-modulo-ui/` como `:ui-tablero`, con `fuente/tablero.py` y `fuente/web/` en `src/main/python/`.
@@ -291,4 +339,5 @@ Falta probar en un teléfono: WebView real, Chaquopy, rTorrent 0.16 compilado pa
 4. Coordinar con `:engine` el .rc (puerto) y no relanzar el daemon tras Apagar rTorrent (ver 0).
 5. Hacer `TableroActivity` la actividad de inicio (o un botón desde la app de prueba).
 6. Más adelante: `MANAGE_EXTERNAL_STORAGE` para descargar en `/storage/emulated/0/Download`.
-7. Ícono: `iconos/tablero.svg` (oscuro, para el ícono de la app); `tablero-error.svg` y `tablero-sinconexion.svg` para la notificación.
+7. Ícono de la app: `icono-adaptable/res/` (ícono adaptable con capa monocroma; ver su LEEME). Los de la notificación ya van en `ejemplo-modulo-ui/src/main/res/drawable/`.
+8. En el servicio de `:engine`: `TableroAvisos(this, ID_NOTIFICACION) { … }.iniciar()` (ver 6), y pasar `--rtorrent-rc` en `TableroServidor.iniciar` si el .rc no sale en la línea de comandos del daemon.

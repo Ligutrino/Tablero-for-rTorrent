@@ -5,6 +5,8 @@ import android.util.Log
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import io.github.ligutrino.rtorrent.engine.android.EngineProvider
+import io.github.ligutrino.rtorrent.engine.android.EngineService
 import io.github.ligutrino.rtorrent.engine.android.EngineServiceHook
 import io.github.ligutrino.rtorrent.engine.rtorrent.RtorrentEngine
 import java.io.File
@@ -15,6 +17,7 @@ import kotlin.concurrent.thread
 /**
  * Corre tablero.py (Python embebido con Chaquopy) en un hilo propio, atado a la vida del servicio
  * en primer plano de :engine. Habla con rtorrent por el mismo socket Unix que usa :engine.
+ * También pone la notificación del servicio (TableroAvisos), en lugar de la de :engine.
  */
 object TableroServidor : EngineServiceHook {
     const val PUERTO = 8090
@@ -22,15 +25,29 @@ object TableroServidor : EngineServiceHook {
     private const val TAG = "Tablero"
     private var modulo: PyObject? = null
     private var hilo: Thread? = null
+    private var avisos: TableroAvisos? = null
+
+    override val ownsNotification: Boolean get() = avisos != null
 
     override fun onServiceStarted(context: Context, engine: RtorrentEngine) {
-        iniciar(context, engine.config.socketFile.absolutePath, engine.config.downloadDir.absolutePath)
+        iniciar(context, engine.config.socketFile.absolutePath, engine.config.downloadDir.absolutePath,
+            engine.config.rcFile.absolutePath)
+        synchronized(this) {
+            if (avisos == null) {
+                val app = context.applicationContext
+                avisos = TableroAvisos(app, EngineService.NOTIFICATION_ID) { EngineProvider.stopService(app) }
+                    .also { it.iniciar() }
+            }
+        }
     }
 
-    override fun onServiceStopping(context: Context) = detener()
+    override fun onServiceStopping(context: Context) {
+        synchronized(this) { avisos?.detener(); avisos = null }
+        detener()
+    }
 
     @Synchronized
-    fun iniciar(ctx: Context, socketScgi: String, carpetaDescargas: String) {
+    fun iniciar(ctx: Context, socketScgi: String, carpetaDescargas: String, rc: String) {
         if (hilo?.isAlive == true) return
         if (!Python.isStarted()) Python.start(AndroidPlatform(ctx.applicationContext))
         val m = Python.getInstance().getModule("tablero").also { modulo = it }
@@ -41,6 +58,8 @@ object TableroServidor : EngineServiceHook {
             "--config", conf,
             "--archivos", carpetaDescargas,
             "--port", PUERTO.toString(),
+            // rtorrent corre con -o import=<rc>; así Tablero no tiene que buscarlo para "Cambiar puerto".
+            "--rtorrent-rc", rc,
         )
         hilo = thread(name = "tablero", isDaemon = true) {
             try {

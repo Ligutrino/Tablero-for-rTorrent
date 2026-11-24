@@ -28,6 +28,12 @@ interface EngineServiceHook {
     fun onServiceStarted(context: Context, engine: RtorrentEngine) {}
     /** El servicio se va a detener (después de parar rtorrent). */
     fun onServiceStopping(context: Context) {}
+
+    /**
+     * `true` si el hook actualiza él mismo la notificación del servicio
+     * ([EngineService.NOTIFICATION_ID]); el servicio entonces solo la usa para startForeground.
+     */
+    val ownsNotification: Boolean get() = false
 }
 
 object EngineProvider {

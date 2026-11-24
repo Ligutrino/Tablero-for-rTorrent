@@ -32,6 +32,14 @@ const cmdHTML = (text) => `<span class="cmd"><code>${esc(text)}</code>${toolBtn(
 const isAndroid = () => state.platform === "android";
 const androidCan = (fn) => typeof window.TableroAndroid?.[fn] === "function";
 const canOpenFolder = () => !isAndroid() || androidCan("openFolder");
+// A touch screen (phone or tablet): no mouse hover, no right click, no keyboard shortcuts.
+const touchUI = () => matchMedia("(pointer: coarse)").matches;
+// How the texts name the device Tablero runs on.
+const thisDevice = () => (isAndroid() ? "este teléfono/tableta" : "este equipo");
+// How to filter by several tags at once.
+// Touch: a small "i" beside a text that a mouse shows on hover. Tapping it shows the text.
+const info = (title, text) => touchUI() ? `<span class="info" role="button" data-tip-title="${esc(title)}" data-tip="${esc(text)}">i</span>` : "";
+const multiTagHow = () => (touchUI() ? "toque largo en una etiqueta y Agregar al filtro" : "Ctrl+clic");
 // How to start or restart rTorrent: a command for the terminal, or on Android the app's button.
 function rtorrentCmdHTML(kind) {
 	if (!isAndroid()) return cmdHTML(kind === "start" ? START_CMD : RESTART_CMD);
@@ -310,7 +318,7 @@ function statusIcon(t) {
 }
 
 const COLUMNS = [
-	{ id: "pos", title: "#", w: 50, num: true, get: (t) => t.pos || 1e9, html: (t) => t.pos || "", tip: () => "Posición del torrent en la lista. Cámbiala con Ctrl+↑ / Ctrl+↓ o desde el menú del torrent" },
+	{ id: "pos", title: "#", w: 50, num: true, get: (t) => t.pos || 1e9, html: (t) => t.pos || "", headTip: true, tip: () => "Posición del torrent en la lista. " + (touchUI() ? "Cámbiala desde el menú del torrent" : "Cámbiala con Ctrl+↑ / Ctrl+↓ o desde el menú del torrent") },
 	{ id: "name", title: "Nombre", w: 380, get: (t) => t.name.toLowerCase(),
 		html: (t) => `<span class="ico">${statusIcon(t)}</span>${esc(t.name)}`, cls: "name", tip: (t) => t.name },
 	{ id: "tags", title: "Etiquetas", w: 220, get: (t) => (t.tags.length ? tagRank(t.tags[0]) : 1e7),
@@ -318,13 +326,13 @@ const COLUMNS = [
 	{ id: "size", title: "Tamaño", w: 90, num: true, get: (t) => t.size, html: (t) => size(t.size) },
 	{ id: "progress", title: "Progreso", w: 120, get: (t) => (t.size ? t.done / t.size : 1), html: progressBar },
 	{ id: "status", title: "Estado", w: 120, get: (t) => ["queued", "waiting"].includes(t.status) ? t.status + String(t.queue_pos).padStart(4, "0") : t.status,
-		html: (t) => `<span class="st st-${t.status}">${statusText(t)}</span>`, tip: (t) => t.status === "queued" ? "Espera su turno: rTorrent verifica un torrent a la vez" : t.status === "waiting" ? "Espera su turno: Tablero reubica un torrent a la vez" : messageText(t) },
+		html: (t) => `<span class="st st-${t.status}">${statusText(t)}</span>${statusTip(t) ? info(statusText(t), statusTip(t)) : ""}`, tip: statusTip },
 	{ id: "down_rate", title: "Bajada", w: 90, num: true, get: (t) => t.down_rate, html: (t) => `<span class="rate-down">${rate(t.down_rate)}</span>` },
 	{ id: "up_rate", title: "Subida", w: 90, num: true, get: (t) => t.up_rate, html: (t) => `<span class="rate-up">${rate(t.up_rate)}</span>` },
 	{ id: "eta", title: "Tiempo rest.", w: 95, num: true, get: (t) => (t.eta < 0 ? 1e12 : t.eta), html: (t) => eta(t.eta) },
 	{ id: "seeds", title: "Semillas", w: 70, num: true, get: (t) => t.seeds, html: (t) => t.seeds || "" },
 	{ id: "peers", title: "Pares", w: 60, num: true, get: (t) => t.peers, html: (t) => t.peers || "" },
-	{ id: "ratio", title: "Proporción", tip: () => "Subido ÷ descargado", w: 85, num: true, get: (t) => t.ratio, html: (t) => nf2.format(t.ratio) },
+	{ id: "ratio", title: "Proporción", headTip: true, tip: () => "Subido ÷ descargado", w: 85, num: true, get: (t) => t.ratio, html: (t) => nf2.format(t.ratio) },
 	{ id: "up_total", title: "Subido", w: 90, num: true, get: (t) => t.up_total, html: (t) => size(t.up_total) },
 	{ id: "done", title: "Descargado", w: 95, num: true, get: (t) => t.done, html: (t) => size(t.done) },
 	{ id: "left", title: "Restante", w: 90, num: true, get: (t) => t.size - t.done, html: (t) => (t.size - t.done ? size(t.size - t.done) : "") },
@@ -461,7 +469,6 @@ function patchRows(tbody, keys, htmls) {
 
 function render() {
 	document.documentElement.dataset.theme = prefs.theme;
-	document.documentElement.classList.toggle("desktop", !!window.tableroDesktop);
 	renderSidebar();
 	renderTagbar();
 	renderTable();
@@ -503,15 +510,15 @@ function renderSidebar() {
 function renderTagbar() {
 	const bar = $("#tagbar");
 	// With the bar hidden, "Coincide" goes to the sidebar's Etiquetas heading.
-	setHTML($("#side-mode"), prefs.tagbar ? "" : `<span title="Coincide: al elegir varias etiquetas (Ctrl+clic), mostrar los torrents que tengan cualquiera de ellas o todas">` +
-		seg("tagmode", [["any", "Cualquiera"], ["all", "Todas"]], prefs.tagMode) + "</span>");
+	setHTML($("#side-mode"), prefs.tagbar ? "" : `<span title="Coincide: al elegir varias etiquetas (${multiTagHow()}), mostrar los torrents que tengan cualquiera de ellas o todas">` +
+		seg("tagmode", [["any", "Cualquiera"], ["all", "Todas"]], prefs.tagMode) + info("Coincide", `Al elegir varias etiquetas (${multiTagHow()}), mostrar los torrents que tengan cualquiera de ellas o todas`) + "</span>");
 	if (!prefs.tagbar) { setHTML(bar, ""); return; }
 	const counts = new Map();
 	filtered({ skipTags: true }).forEach((t) => t.tags.forEach((x) => counts.set(x, (counts.get(x) || 0) + 1)));
 	const tags = allTags().filter((x) => counts.has(x) || state.filter.tags.has(x));
 	if (!tags.length) { setHTML(bar, ""); return; }
 	setHTML(bar, tags.map((x) => chip(x, ` <span class="n">${counts.get(x) || 0}</span>`, "bar", state.filter.tags.has(x) ? "on" : "")).join("") +
-		`<span class="mode" title="Al elegir varias etiquetas (Ctrl+clic), mostrar los torrents que tengan cualquiera de ellas o todas"><span class="dimtxt">Coincide</span>` +
+		`<span class="mode" title="Al elegir varias etiquetas (${multiTagHow()}), mostrar los torrents que tengan cualquiera de ellas o todas"><span class="dimtxt">Coincide</span>${info("Coincide", `Al elegir varias etiquetas (${multiTagHow()}), mostrar los torrents que tengan cualquiera de ellas o todas`)}` +
 		seg("tagmode", [["any", "Cualquiera"], ["all", "Todas"]], prefs.tagMode) + "</span>");
 }
 
@@ -521,7 +528,7 @@ function renderHeader() {
 	setHTML($("#torrents thead tr"), cols.map((c) => {
 		const d = COL[c.id];
 		const arrow = prefs.sort.col === c.id ? `<span class="arrow">${prefs.sort.dir > 0 ? "▲" : "▼"}</span>` : "";
-		return `<th data-col="${c.id}" draggable="true" class="${d.num ? "num" : ""}" title="${esc(d.title)}">${esc(d.title)}${arrow}<span class="grip"></span></th>`;
+		return `<th data-col="${c.id}" draggable="true" class="${d.num ? "num" : ""}" title="${esc(d.title)}">${esc(d.title)}${d.headTip ? info(d.title, d.tip()) : ""}${arrow}<span class="grip"></span></th>`;
 	}).join(""));
 }
 
@@ -605,13 +612,16 @@ function renderDetails() {
 		if (!$("#piece-map", body)) {
 			body.innerHTML = `<div class="meters">
 				<span class="lbl">Descargado</span><canvas id="piece-map" class="meter"></canvas><span class="val" id="gen-pct"></span>
-				<span class="lbl">Disponibilidad</span><div class="meter avail" id="gen-avail" data-tip-title="Disponibilidad"><span></span></div><span class="val" id="gen-av"></span>
+				<span class="lbl">Disponibilidad${info("Disponibilidad", "")}</span><div class="meter avail" id="gen-avail" data-tip-title="Disponibilidad"><span></span></div><span class="val" id="gen-av"></span>
 			</div><div id="gen-grid"></div>`;
 		}
 		$("#gen-pct", body).textContent = `${nf1.format(pct * 100)} %`;
 		$("#gen-av", body).textContent = av == null ? "…" : nf2.format(av);
 		const avail = $("#gen-avail", body);
-		avail.dataset.tip = d && !d.availability_estimated ? "Copias completas del torrent entre los pares conectados: el número entero es cuántas copias hay de la pieza más escasa y la fracción, qué parte de las piezas tiene una copia más." : "Estimada a partir del avance de los pares conectados.";
+		const availTip = d && !d.availability_estimated ? "Copias completas del torrent entre los pares conectados: el número entero es cuántas copias hay de la pieza más escasa y la fracción, qué parte de las piezas tiene una copia más." : "Estimada a partir del avance de los pares conectados.";
+		avail.dataset.tip = availTip;
+		const availInfo = $(".lbl .info", body);
+		if (availInfo) availInfo.dataset.tip = availTip;
 		avail.firstChild.style.width = `${av == null ? 0 : Math.min(1, av) * 100}%`;
 		setHTML($("#gen-grid", body), dl([
 			["Estado", `<span class="st st-${t.status}">${statusText(t)}</span>`],
@@ -628,7 +638,7 @@ function renderDetails() {
 			["Prioridad", PRIO[t.priority] || ""],
 			["Etiquetas", t.tags.map((x) => chip(x)).join(" ") || "—", true],
 			["Carpeta", `<span class="folder-line"><span title="${esc(d && d.base_path || t.directory)}">${esc(d && d.base_path || t.directory)}</span>${canOpenFolder() ? toolBtn("folder-open", "Abrir", 'data-open-folder title="Abrir en el explorador de archivos"') : ""}</span>`, true],
-			["Identificador", `<code title="Huella única del torrent (info-hash), la misma en toda la red">${t.hash}</code>`, true],
+			["Identificador", `<code title="Huella única del torrent (info-hash), la misma en toda la red">${t.hash}</code>${info("Identificador", "Huella única del torrent (info-hash), la misma en toda la red")}`, true],
 			...(t.message ? [["Mensaje", `<span class="folder-line"><span title="${esc(messageText(t))}">${esc(messageText(t))}</span>${toolBtn("copy", "Copiar", 'data-copy-message title="Copiar el mensaje"')}</span>`, true]] : []),
 			...(d && d.chunks ? [["Piezas", `${nf0.format(d.chunks)} × ${size(d.chunk_size)}`]] : []),
 			["Privado", t.private ? "Sí" : "No"],
@@ -930,12 +940,69 @@ function showTip(x, y, html) {
 	tip.style.top = (y + 18 + r.height > innerHeight ? y - r.height - 10 : y + 18) + "px";
 }
 function hideTip() { $("#tip").hidden = true; }
+// The legend item is what shows the text; the "i" only marks it on a touch screen.
+const legendInfo = () => (touchUI() ? '<span class="info" aria-hidden="true">i</span>' : "");
+function statusTip(t) {
+	return t.status === "queued" ? "Espera su turno: rTorrent verifica un torrent a la vez" : t.status === "waiting" ? "Espera su turno: Tablero reubica un torrent a la vez" : messageText(t);
+}
+
+// Touch: tapping an "i" (or a legend, or a "?") shows its text; a tap anywhere else hides it.
+function wireTouchTips() {
+	document.addEventListener("click", (e) => {
+		const el = e.target.closest?.("[data-tip]");
+		if (!el || el.matches("button")) return;
+		e.preventDefault();
+		e.stopPropagation();
+		if (state.tipEl === el && !$("#tip").hidden) return hideTip();
+		const r = el.getBoundingClientRect();
+		showTip(r.left, r.bottom - 12, `<b>${esc(el.dataset.tipTitle || "")}</b><div>${esc(el.dataset.tip)}</div>`);
+		state.tipEl = el;
+	}, true);
+	document.addEventListener("pointerdown", (e) => {
+		if ($("#tip").hidden || e.target.closest?.("[data-tip]") || e.target === state.tipCanvas) return;
+		state.tipCanvas?.onmouseleave?.();
+		state.tipCanvas = null;
+		hideTip();
+	}, true);
+	// The table and panels scroll under it.
+	document.addEventListener("scroll", () => { if (!$("#tip").hidden && !state.tipCanvas) hideTip(); }, true);
+}
+
+// Touch: two fingers dragged down together reload the page. One finger scrolls the list and a
+// pinch (fingers moving apart or together) zooms, so neither gets in the way.
+function wireTwoFingerReload() {
+	const hint = document.createElement("div");
+	hint.id = "reload-hint";
+	hint.hidden = true;
+	document.body.append(hint);
+	let start = null, ready = false;
+	const pts = (e) => [...e.touches].slice(0, 2).map((t) => [t.clientX, t.clientY]);
+	const gap = (p) => Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]);
+	const reset = () => { start = null; ready = false; hint.hidden = true; };
+	document.addEventListener("touchstart", (e) => {
+		const zoomed = window.visualViewport && visualViewport.scale > 1.05;   // two fingers then pan the zoomed page
+		if (e.touches.length === 2 && !zoomed && !modalOpen()) start = pts(e); else reset();
+	}, { passive: true });
+	document.addEventListener("touchmove", (e) => {
+		if (!start || e.touches.length !== 2) return;
+		const p = pts(e);
+		if (Math.abs(gap(p) - gap(start)) > 50) return reset();   // a pinch
+		const dy = Math.min(p[0][1] - start[0][1], p[1][1] - start[1][1]);
+		ready = dy > 110;
+		hint.hidden = dy < 25;
+		hint.classList.toggle("ready", ready);
+		hint.textContent = ready ? "Suelta para recargar" : "Sigue bajando para recargar";
+		hint.style.transform = `translate(-50%, ${Math.min(dy, 110) * 0.5}px)`;
+	}, { passive: true });
+	document.addEventListener("touchend", () => { if (ready) location.reload(); reset(); });
+	document.addEventListener("touchcancel", reset);
+}
 
 // ------------------------------------------------------------ pieces tab
 
 const PIECE_CATS = {
 	done: { name: "Completa", tip: "Pieza descargada y verificada. Ya está en tu disco y puedes compartirla con otros." },
-	partial: { name: "Parcial", tip: "El cuadro agrupa varias piezas y solo algunas están completas. Pasa el mouse sobre el mapa para ver el detalle." },
+	partial: { name: "Parcial", tip: `El cuadro agrupa varias piezas y solo algunas están completas. ${touchUI() ? "Toca" : "Pasa el mouse sobre"} el mapa para ver el detalle.` },
 	avail: { name: "Disponible en pares", tip: "Te falta esta pieza, pero al menos un par conectado la tiene, así que se puede descargar ahora." },
 	nosource: { name: "Sin fuentes", tip: "Te falta esta pieza y ningún par conectado la tiene. El torrent no se puede completar hasta que aparezca alguien con ella." },
 	missing: { name: "Falta", tip: "Te falta esta pieza. Con el torrent detenido o en pausa no hay pares conectados, así que no se sabe quién la tiene." },
@@ -964,7 +1031,7 @@ function piecesHTML(t, d) {
 	const cols = Math.max(1, Math.floor(($("#details-body").clientWidth - 32 + PIECE_GAP) / (PIECE_CELL + PIECE_GAP)));
 	const k = Math.ceil(p.n / (cols * PIECE_ROWS));
 	const shown = ["done", ...(k > 1 ? ["partial"] : []), ...(d.seen ? ["avail", "nosource"] : ["missing"]), "skipped"];
-	const legend = shown.map((c) => `<span class="legend-item" data-tip-title="${PIECE_CATS[c].name}" data-tip="${esc(PIECE_CATS[c].tip)}">` +
+	const legend = shown.map((c) => `<span class="legend-item" data-tip-title="${PIECE_CATS[c].name}" data-tip="${esc(PIECE_CATS[c].tip)}">${legendInfo()}` +
 		`<i class="sw pc-${c}"></i>${PIECE_CATS[c].name}${c === "partial" ? "" : ` <b>${nf0.format(counts[c] || 0)}</b>`}</span>`).join("");
 	return `<div class="subtools">${legend}<span class="spacer"></span>
 		<span class="dimtxt">${nf0.format(p.n)} piezas de ${size(d.chunk_size)}${k > 1 ? ` · cada cuadro = ${k} piezas` : ""} · disponibilidad ${nf2.format(d.availability)}</span></div>
@@ -1031,6 +1098,7 @@ function drawPieceGrid(canvas, t, d) {
 			(files.length ? `<div class="dimtxt">${esc(files.slice(0, 3).join(", "))}${files.length > 3 ? ` y ${files.length - 3} más` : ""}</div>` : ""));
 	};
 	canvas.onmouseleave = hideTip;
+	canvas.onpointerdown = (e) => { if (e.pointerType !== "mouse") { state.tipCanvas = canvas; canvas.onmousemove(e); } };
 }
 
 // ------------------------------------------------------------ speed tab
@@ -1057,15 +1125,21 @@ async function loadHistory() {
 	} catch { /* next refresh */ }
 }
 
+// Lines to draw and their legend; the limits only exist for the total of all torrents.
+function speedLegend(samples, total) {
+	const last = samples[samples.length - 1];
+	const series = ["down", "up", ...(total && last && last[3] ? ["dlim"] : []), ...(total && last && last[4] ? ["ulim"] : [])];
+	const value = (s) => !last ? "" : s === "down" ? rate(last[1]) || "0 B/s" : s === "up" ? rate(last[2]) || "0 B/s" : s === "dlim" ? rate(last[3]) : rate(last[4]);
+	const legend = series.map((s) => `<span class="legend-item" data-tip-title="${SPEED_SERIES[s].name}" data-tip="${esc(SPEED_SERIES[s].tip)}">${legendInfo()}` +
+		`<i class="ln ln-${s}"></i>${SPEED_SERIES[s].name} <b>${value(s)}</b></span>`).join("");
+	return { series, legend };
+}
+
 function renderSpeed(body, t) {
 	const key = historyKey(t);
 	const total = prefs.speedScope === "total";
 	const samples = state.historyKey === key && state.history ? state.history.samples : [];
-	const last = samples[samples.length - 1];
-	const series = ["down", "up", ...(total && last && last[3] ? ["dlim"] : []), ...(total && last && last[4] ? ["ulim"] : [])];
-	const value = (s) => !last ? "" : s === "down" ? rate(last[1]) || "0 B/s" : s === "up" ? rate(last[2]) || "0 B/s" : s === "dlim" ? rate(last[3]) : rate(last[4]);
-	const legend = series.map((s) => `<span class="legend-item" data-tip-title="${SPEED_SERIES[s].name}" data-tip="${esc(SPEED_SERIES[s].tip)}">` +
-		`<i class="ln ln-${s}"></i>${SPEED_SERIES[s].name} <b>${value(s)}</b></span>`).join("");
+	const { series, legend } = speedLegend(samples, total);
 	setHTML(body, `<div class="subtools">
 		${seg("scope", [["total", "Total"], ["torrent", "Torrent seleccionado"]], prefs.speedScope)}
 		${seg("range", SPEED_RANGES, prefs.speedRange)}
@@ -1124,12 +1198,15 @@ function drawSpeed(canvas, samples, series) {
 			g.globalAlpha = 1;
 			g.fillText(val ? rate(val) : "0", L - 8, y);
 		}
-		// x labels: clock times on round minutes
-		const every = prefs.speedRange <= 300 ? 60 : prefs.speedRange <= 1800 ? 300 : 600;
+		// x labels: clock times on round minutes, spaced so they don't overlap in a narrow chart
+		const clock = (ts) => new Date(ts * 1000).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
+		const gap = g.measureText(clock(now)).width + 16;
+		const every = [60, 120, 300, 600, 900, 1200, 1800, 3600].find((e) =>
+			e >= (prefs.speedRange <= 300 ? 60 : prefs.speedRange <= 1800 ? 300 : 600) && e / prefs.speedRange * (R - L) >= gap) || 3600;
 		g.textAlign = "center";
 		g.textBaseline = "top";
 		for (let ts = Math.ceil(t0 / every) * every; ts <= now; ts += every) {
-			g.fillText(new Date(ts * 1000).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }), X(ts), B + 6);
+			g.fillText(clock(ts), X(ts), B + 6);
 		}
 		// series: areas first, then lines; limits dashed
 		const line = (k, area) => {
@@ -1181,6 +1258,7 @@ function drawSpeed(canvas, samples, series) {
 			`<div><i class="ln ln-down"></i>Bajada ${rate(best[1]) || "0 B/s"}</div><div><i class="ln ln-up"></i>Subida ${rate(best[2]) || "0 B/s"}</div>`);
 	};
 	canvas.onmouseleave = () => { draw(null); hideTip(); };
+	canvas.onpointerdown = (e) => { if (e.pointerType !== "mouse") { state.tipCanvas = canvas; canvas.onmousemove(e); } };
 }
 
 // Downloaded pieces, BiglyBT style: each pixel column shows how many of
@@ -1230,6 +1308,7 @@ async function refresh() {
 		if (!menuOpen() && !state.dragging) render();
 		if (prefs.tab !== "general") state.detailsFor = null;
 		if (prefs.tab === "speed") loadHistory(); else loadDetails();
+		loadLimitsHistory();
 	} catch (e) {
 		state.ok = false;
 		const c = $("#st-conn");
@@ -1284,7 +1363,7 @@ function openMenu(x, y, items) {
 		if (it.head) { m.insertAdjacentHTML("beforeend", `<div class="head">${esc(it.head)}</div>`); continue; }
 		const d = document.createElement("div");
 		d.className = "item" + (it.disabled ? " disabled" : "");
-		d.innerHTML = `<span class="chk">${it.chk === true ? sico("check") : it.chk === "mixed" ? "–" : ""}</span>${it.html || esc(it.label)}${it.k ? `<span class="k">${esc(it.k)}</span>` : ""}`;
+		d.innerHTML = `<span class="chk">${it.chk === true ? sico("check") : it.chk === "mixed" ? "–" : ""}</span>${it.html || esc(it.label)}${it.k && !touchUI() ? `<span class="k">${esc(it.k)}</span>` : ""}`;
 		d.onclick = () => { closeMenu(); it.run(); };
 		m.append(d);
 	}
@@ -1346,6 +1425,11 @@ function headerMenu(e) {
 			run: () => { if (c.on && visibleCols().length === 1) return; c.on = !c.on; savePrefs(); renderTable(); },
 		})),
 		"-",
+		...(touchUI() ? [{ label: "Ajustar el ancho al texto", run: () => {
+			visibleCols().forEach((c, i) => (c.w = fitWidth($("#torrents"), i)));
+			savePrefs();
+			renderTable();
+		} }] : []),
 		{ label: "Restablecer columnas", run: () => { prefs.columns = null; savePrefs(); renderTable(); } },
 		{ label: "Vista por defecto (orden y filtro)", run: () => {
 			prefs.sort = { col: "added", dir: -1 };
@@ -1367,10 +1451,13 @@ function tagMenu(e, name) {
 		state.tagConf.order = o;
 		saveTagConf();
 	};
-	const hs = selected();
+	const hs = selected(), f = state.filter.tags;
 	openMenu(e.clientX, e.clientY, [
 		{ html: chip(name), disabled: true },
 		"-",
+		// On a touch screen there is no Ctrl+clic to filter by several tags.
+		...(touchUI() ? [{ label: f.has(name) ? "Quitar del filtro" : f.size ? "Agregar al filtro" : "Filtrar por esta etiqueta",
+			run: () => toggleTagFilter(name, true) }, "-"] : []),
 		{ label: "Opciones de etiqueta…", run: () => tagDialog(name) },
 		{ label: `Agregar a ${hs.length} seleccionado${hs.length === 1 ? "" : "s"}`, disabled: !hs.length, run: () => act("/api/edit-tags", { hashes: hs, add: [name] }) },
 		{ label: "Quitar de los seleccionados", disabled: !hs.length, run: () => act("/api/edit-tags", { hashes: hs, remove: [name] }) },
@@ -1452,6 +1539,10 @@ function command(cmd) {
 		case "new-tag": return tagDialog(null);
 	}
 	if (!hs.length) return toast("Selecciona uno o más torrents");
+	if (cmd === "menu") { // touch screens: the torrent menu without a long press
+		const r = $('#toolbar [data-cmd="menu"]').getBoundingClientRect();
+		return rowMenu({ clientX: r.left, clientY: r.bottom + 2 });
+	}
 	if (cmd === "remove") return removeDialog();
 	if (cmd === "tags") return assignTagsDialog();
 	act("/api/action", { action: cmd, hashes: hs });
@@ -1780,7 +1871,7 @@ function addDropped(all) {
 function addDialog(files = []) {
 	let picked = [...files];
 	const m = modal("Agregar torrents", form(
-		frow("Archivos", `<div class="dropzone" id="add-drop">Arrastra archivos .torrent aquí o <u>elige archivos</u><input type="file" id="add-file" accept=".torrent,application/x-bittorrent" multiple hidden><div id="add-files"></div></div>`),
+		frow("Archivos", `<div class="dropzone" id="add-drop">${touchUI() ? "<u>Elige archivos .torrent</u>" : "Arrastra archivos .torrent aquí o <u>elige archivos</u>"}<input type="file" id="add-file" accept=".torrent,application/x-bittorrent" multiple hidden><div id="add-files"></div></div>`),
 		frow("Contenido", '<div id="add-content"></div>').replace('class="frow"', 'class="frow" id="add-content-row" hidden'),
 		frow("Enlaces magnet", `<textarea id="add-magnet" placeholder="magnet:?xt=urn:btih:…"></textarea><div class="hint">Enlaces magnet o URL de archivos .torrent, uno por línea.</div>`, "add-magnet"),
 		frow("Carpeta", folderPicker("add-dir", prefs.lastDir) + `<div class="hint">Vacío = la carpeta predeterminada de rTorrent.</div><div class="hint" id="add-space"></div>`),
@@ -2022,7 +2113,7 @@ function addTrackerDialog(t) {
 
 // A folder field with a browser of the folders on the computer running Tablero.
 function folderPicker(id, value) {
-	return `<div class="fp"><div class="row"><input type="text" id="${id}" value="${esc(value || "")}" placeholder="/ruta/a/la/carpeta" style="flex:1">` +
+	return `<div class="fp"><div class="row"><input type="text" id="${id}" value="${esc(value || "")}" placeholder="${isAndroid() ? "/storage/emulated/0/Download/torrents" : "/ruta/a/la/carpeta"}" style="flex:1">` +
 		`<button type="button" class="btn" data-fp-browse="${id}">Examinar…</button></div><div class="fp-panel" data-fp-for="${id}" hidden></div></div>`;
 }
 // Puts a path in the field scrolled to its end, where the folder's own name is.
@@ -2186,12 +2277,46 @@ function limitsDialog() {
 	const s = state.stats;
 	const num = (id, v) => `<span class="num-in"><input type="number" id="${id}" min="0" value="${Math.round((v || 0) / KB())}"> ${UNITS()[1]}/s</span>`;
 	const m = modal("Límites de velocidad", form(
+		frow("Velocidad", `<div class="lim-tools">${seg("range", SPEED_RANGES, prefs.speedRange)}<span class="lim-legend"></span></div>` +
+			'<div class="lim-chart"><div class="placeholder">Juntando datos…</div></div>' +
+			'<div class="hint">Bajada y subida de todos los torrents juntos; las líneas cortadas son los límites actuales. Cada torrent tiene su propio gráfico en la pestaña Velocidad.</div>'),
 		frow("Bajada máxima", num("lim-down", s.down_limit), "lim-down"),
 		frow("Subida máxima", num("lim-up", s.up_limit) + '<div class="hint">0 = sin límite. Se aplica a todos los torrents juntos; cada torrent puede tener su propio límite en la pestaña Opciones.</div>', "lim-up")),
 		[{ label: "Cancelar" }, {
 			label: "Aplicar", cls: "primary",
 			run: () => act("/api/limits", { down: +$("#lim-down", m).value * KB(), up: +$("#lim-up", m).value * KB() }, "Límites aplicados"),
-		}]);
+		}], "wide limits");
+	$(".lim-chart", m).closest(".frow").classList.add("lim-row");
+	m.addEventListener("click", (e) => {
+		const b = e.target.closest("[data-range]");
+		if (!b) return;
+		prefs.speedRange = +b.dataset.range;
+		savePrefs();
+		m.querySelectorAll("[data-range]").forEach((x) => x.classList.toggle("on", x === b));
+		drawLimitsChart();
+	});
+	state.limitsHistory = null;
+	loadLimitsHistory();
+}
+
+// The overall chart in Límites de velocidad: the same total history as the Velocidad tab,
+// fetched again on every refresh while the dialog is open.
+const limitsOpen = () => modalOpen() && $("#modal").classList.contains("limits");
+async function loadLimitsHistory() {
+	if (!limitsOpen()) return;
+	try {
+		state.limitsHistory = (await api("/api/history")).samples;
+		drawLimitsChart();
+	} catch { /* next refresh */ }
+}
+function drawLimitsChart() {
+	const m = $("#modal"), wrap = $(".lim-chart", m), samples = state.limitsHistory;
+	if (!limitsOpen() || !wrap || !samples) return;
+	$(".lim-legend", m).innerHTML = speedLegend(samples, true).legend;
+	if (samples.length < 2) { wrap.innerHTML = '<div class="placeholder">Juntando datos…</div>'; return; }
+	let canvas = $("canvas", wrap);
+	if (!canvas) { wrap.innerHTML = ""; canvas = document.createElement("canvas"); wrap.append(canvas); }
+	drawSpeed(canvas, samples, speedLegend(samples, true).series);
 }
 
 // Only in the desktop window, which owns these options (ventana.json, ~/.config/autostart).
@@ -2220,7 +2345,7 @@ function settingsDialog() {
 			<label class="check"><input type="checkbox" id="op-tint"> Teñir las filas con el color de su primera etiqueta</label>
 			<label class="check"><input type="checkbox" id="op-tagbar"> Mostrar la barra de etiquetas sobre la lista</label></div>`),
 		frow("Filtro", '<select id="op-mode"><option value="any">Mostrar torrents con cualquiera de las etiquetas elegidas</option><option value="all">Mostrar solo torrents con todas las etiquetas elegidas</option></select>' +
-			'<div class="hint">Cuando filtras por varias etiquetas a la vez (Ctrl+clic).</div>', "op-mode"),
+			`<div class="hint">Cuando filtras por varias etiquetas a la vez (${multiTagHow()}).</div>`, "op-mode"),
 		frow("Unidades", `<span class="seg">${[["bin", "Binarias: KiB, MiB, GiB"], ["dec", "Decimales: KB, MB, GB"]].map(([v, n]) =>
 			`<label><input type="radio" name="op-units" value="${v}"${prefs.units === v ? " checked" : ""}><span>${n}</span></label>`).join("")}</span>` +
 			'<div class="hint">Para tamaños, velocidades y límites. Binarias: 1 KiB = 1024 bytes, como cuenta rTorrent. Decimales: 1 KB = 1000 bytes, como los discos y la mayoría de las páginas.</div>'),
@@ -2230,7 +2355,7 @@ function settingsDialog() {
 			'<div class="hint">Lo cierra de forma normal: guarda la sesión y avisa a los rastreadores.</div>' +
 			'<div class="cmd-list">Para volver a encenderlo: ' + rtorrentCmdHTML("start") + '</div>'),
 		frow("Respaldo", toolBtn("archive", "Respaldo y restauración…", 'id="op-backup"') +
-			'<div class="hint">Para reinstalar el sistema o llevar todo a otro PC: etiquetas, opciones y los torrents de rTorrent con su avance.</div>'),
+			`<div class="hint">${isAndroid() ? "Para cambiar de teléfono/tableta o pasar todo a un PC" : "Para reinstalar el sistema o llevar todo a otro PC"}: etiquetas, opciones y los torrents de rTorrent con su avance.</div>`),
 		frow("Red", `<label class="check"><input type="checkbox" id="op-lan"> Permitir abrir Tablero desde otros equipos de la red</label>
 			<div class="pw-row"><input type="password" id="op-pw" autocomplete="new-password" spellcheck="false"></div>
 			<div id="op-net"></div>`, "op-lan"),
@@ -2250,7 +2375,7 @@ function settingsDialog() {
 				if (net && net.local && (lan !== net.lan || pw)) {
 					try {
 						const r = await api("/api/access", { lan, password: pw });
-						toast(r.restart ? (lan ? "Tablero se reinicia para abrirse a la red…" : "Tablero se reinicia para escuchar solo en este equipo…") :
+						toast(r.restart ? (lan ? "Tablero se reinicia para abrirse a la red…" : `Tablero se reinicia para escuchar solo en ${thisDevice()}…`) :
 							pw ? "Contraseña guardada" : "Guardado");
 					} catch (e) { toast(e.message, true); return false; }
 				}
@@ -2284,10 +2409,11 @@ function settingsDialog() {
 		pwIn.placeholder = net.password ? "Contraseña (vacío = no cambiarla)" : "Contraseña (al menos 6 caracteres)";
 		pwIn.disabled = lanBox.disabled = !net.local;
 		pwIn.hidden = !lanBox.checked && !net.password;
-		netInfo.innerHTML = !net.local ? '<div class="hint">Solo se cambia en el equipo donde corre Tablero.</div>' :
-			`<div>${net.listening ? `Ahora se abre desde la red en <b>${esc(url)}</b>${net.password ? "" : ", sin contraseña"}.` : "Ahora solo se abre en este equipo."}</div>` +
-			(net.fixed ? `<div class="hint">Tablero se inició con <code>--bind ${esc(net.fixed)}</code>, que manda sobre esta opción.</div>` : "") +
-			'<div class="hint">Desde otro equipo, el navegador pide la contraseña (el usuario puede ser cualquiera). En este equipo no se pide. Viaja sin cifrar: úsalo solo en tu red de casa.</div>' +
+		netInfo.innerHTML = !net.local ? `<div class="hint">Solo se cambia en ${isAndroid() ? "el teléfono/tableta" : "el equipo"} donde corre Tablero.</div>` :
+			`<div>${net.listening ? `Ahora se abre desde la red en <b>${esc(url)}</b>${net.password ? "" : ", sin contraseña"}.` : `Ahora solo se abre en ${thisDevice()}.`}</div>` +
+			(net.fixed && !isAndroid() ? `<div class="hint">Tablero se inició con <code>--bind ${esc(net.fixed)}</code>, que manda sobre esta opción.</div>` : "") +
+			`<div class="hint">Desde otro equipo, el navegador pide la contraseña (el usuario puede ser cualquiera). En ${thisDevice()} no se pide. Viaja sin cifrar: úsalo solo en tu red de casa.</div>` +
+			(isAndroid() ? '<div class="hint">Funciona con wifi y mientras la app de Tablero está activa.</div>' : "") +
 			ufwHTML([`${net.port}/tcp`]);
 	};
 	lanBox.onchange = showNet;
@@ -2303,12 +2429,16 @@ async function backupDialog() {
 	try { info = await api("/api/backups"); } catch (e) { return toast(e.message, true); }
 	const m = modal("Respaldo y restauración", form(
 		frow("Carpeta", folderPicker("bk-dir", info.folder || "") +
-			'<div class="hint">Donde se guardan los respaldos. Mejor en otro disco o en uno externo, para que sobrevivan a una reinstalación.</div>', "bk-dir"),
+			`<div class="hint">${isAndroid() ? "Donde se guardan los respaldos. Para que sobrevivan a un cambio de teléfono/tableta, guarda una copia fuera de él con Exportar (en el PC o en la nube)." :
+				"Donde se guardan los respaldos. Mejor en otro disco o en uno externo, para que sobrevivan a una reinstalación."}</div>`, "bk-dir"),
 		frow("Automático", seg("bkevery", [["never", "Nunca"], ["daily", "Diario"], ["weekly", "Semanal"]], info.every) +
 			` <span class="num-in">guardar los últimos <input type="number" id="bk-keep" min="1" max="100" value="${info.keep}"></span>` +
 			'<div class="hint">Tablero hace el respaldo solo mientras está corriendo, y borra los automáticos más antiguos.</div>'),
 		frow("Respaldos", '<div id="bk-list"></div>' +
 			`<div class="add-tools">${toolBtn("archive", "Crear respaldo ahora", 'id="bk-now"')}${toolBtn("rotate-ccw", "Restaurar el elegido…", 'id="bk-restore"')}</div>` +
+			`<div class="add-tools">${toolBtn("download", "Exportar el elegido…", 'id="bk-export"')}${toolBtn("upload", "Importar…", 'id="bk-import"')}` +
+			'<input type="file" id="bk-file" accept=".zip,application/zip" hidden></div>' +
+			'<div class="hint">Exportar guarda una copia del respaldo donde elijas. Importar trae un respaldo de otro equipo a esta carpeta y lo abre para restaurarlo.</div>' +
 			`<div class="hint">Incluye: ${BACKUP_HAS}</div>`)),
 		[{ label: "Cerrar" }, {
 			label: "Guardar", cls: "primary",
@@ -2326,7 +2456,7 @@ async function backupDialog() {
 			files.map((f) => `<tr><td><input type="radio" name="bk-pick" value="${esc(f.path)}"${f.path === chosen ? " checked" : ""}></td>` +
 				`<td>${esc(date(f.time))}</td><td>${size(f.size)}</td></tr>`).join("") + "</tbody></table>" :
 			'<div class="dimtxt">No hay respaldos en esta carpeta.</div>';
-		$("#bk-restore", m).disabled = !files.length;
+		$("#bk-restore", m).disabled = $("#bk-export", m).disabled = !files.length;
 	};
 	list(info.files);
 	const reload = async () => {
@@ -2357,6 +2487,81 @@ async function backupDialog() {
 			btn.disabled = false;
 		}
 		if (e.target.closest("#bk-restore") && chosen) restoreDialog(chosen);
+		if (e.target.closest("#bk-export") && chosen) exportBackup(chosen);
+		if (e.target.closest("#bk-import")) $("#bk-file", m).click();
+	});
+	$("#bk-file", m).addEventListener("change", async (e) => {
+		const file = e.target.files[0];
+		e.target.value = "";
+		if (!file) return;
+		const btn = $("#bk-import", m);
+		btn.disabled = true;
+		toast("Importando " + file.name + "…");
+		try {
+			const r = await importBackup(file, $("#bk-dir", m).value.trim());
+			chosen = r.path;
+			await reload();
+			chosen = r.path;
+			$$('input[name="bk-pick"]', m).forEach((x) => (x.checked = x.value === r.path));
+			restoreDialog(r.path);
+		} catch (err) { toast(err.message, true); }
+		btn.disabled = false;
+	});
+}
+
+// A copy of a backup wherever the person wants it: the Android app's "Guardar como"
+// (TableroAndroid.exportFile), or the browser's download.
+function exportBackup(path) {
+	if (androidCan("exportFile")) return window.TableroAndroid.exportFile(path);
+	const a = document.createElement("a");
+	a.href = "/api/backup-file?path=" + encodeURIComponent(path);
+	a.download = path.split("/").pop();
+	document.body.append(a);
+	a.click();
+	a.remove();
+}
+
+// A backup .zip from elsewhere, sent as it is (it may be larger than the JSON limit).
+async function importBackup(file, folder) {
+	const r = await fetch("/api/backup-import?" + new URLSearchParams({ folder, name: file.name }), {
+		method: "POST", body: file, headers: { "Content-Type": "application/zip", "X-Tablero": "1" },
+	});
+	const data = await r.json().catch(() => ({ error: "Respuesta inválida (" + r.status + ")" }));
+	if (!r.ok || data.error) throw new Error(data.error || r.statusText);
+	return data;
+}
+
+// Android, the first time: where the backups go (a phone or tablet has no second disk to
+// suggest, and its own folder is lost if the app is uninstalled).
+async function firstBackupFolder() {
+	if (!isAndroid() || prefs.backupAsked || modalOpen()) return;
+	let info;
+	try { info = await api("/api/backups"); } catch { return; }
+	if (info.chosen) { prefs.backupAsked = true; savePrefs(); return; }
+	if (modalOpen()) return;
+	let every = "weekly";
+	const m = modal("Respaldos de Tablero", form(
+		frow("Carpeta", folderPicker("fb-dir", info.folder || "") +
+			'<div class="hint">Dónde guardar los respaldos: tus etiquetas, opciones y los torrents con su avance. Elige una carpeta que no se borre al desinstalar la app; Download o Documents sirven.</div>', "fb-dir"),
+		frow("Automático", seg("fbevery", [["never", "Nunca"], ["daily", "Diario"], ["weekly", "Semanal"]], every) +
+			'<div class="hint">Se cambia después en ⚙ Opciones → Respaldo, donde también puedes exportar e importar respaldos.</div>')),
+		[{ label: "Ahora no", run: () => { prefs.backupAsked = true; savePrefs(); } }, {
+			label: "Guardar", cls: "primary",
+			run: async () => {
+				try {
+					await api("/api/backup-settings", { folder: $("#fb-dir", m).value.trim(), every, keep: info.keep || 5 });
+				} catch (e) { toast(e.message, true); return false; }
+				prefs.backupAsked = true;
+				savePrefs();
+				toast("Carpeta de respaldos guardada");
+			},
+		}]);
+	wireFolderPickers(m);
+	m.addEventListener("click", (e) => {
+		const b = e.target.closest("[data-fbevery]");
+		if (!b) return;
+		every = b.dataset.fbevery;
+		$$("[data-fbevery]", m).forEach((x) => x.classList.toggle("on", x === b));
 	});
 }
 
@@ -2369,14 +2574,15 @@ async function restoreDialog(path) {
 		["tags", "Etiquetas y logos", info.has.tags, info.has.tags],
 		["prefs", "Preferencias de la interfaz (columnas, tema, filtros…)", info.has.prefs, info.has.prefs],
 		["access", "Acceso desde la red y su contraseña", false, info.has.access],
-		["rc", "rtorrent.rc <span class=\"dimtxt\">(reemplaza el de este equipo; se guarda una copia)</span>", false, info.has.rc],
+		["rc", `rtorrent.rc <span class="dimtxt">(reemplaza el de ${thisDevice()}; se guarda una copia${isAndroid() ? ". No lo marques si el respaldo viene de un PC: sus rutas y su conexión con rTorrent no sirven aquí" : ""})</span>`, false, info.has.rc],
 	];
 	const m = modal("Restaurar respaldo", form(
 		frow("Respaldo", `<div class="cur-loc">${esc(path.split("/").pop())}</div><div class="hint">Creado el ${esc(created)} en el equipo <b>${esc(info.host || "?")}</b> con Tablero ${esc(info.version || "")}: ${info.torrents} torrents.</div>`),
 		frow("Qué restaurar", `<div class="opt-rules">${parts.map(([k, label, on, avail]) =>
 			`<label class="check"><input type="checkbox" data-part="${k}"${on && avail ? " checked" : ""}${avail ? "" : " disabled"}> ${label}</label>`).join("")}</div>`),
-		frow("Carpetas", `<div class="rs-map"><span>Cambiar</span><input type="text" id="rs-from" placeholder="/ruta/en/el/respaldo" spellcheck="false"><span>por</span><input type="text" id="rs-to" placeholder="/ruta/en/este/equipo" spellcheck="false"></div>` +
-			'<div id="rs-folders"></div><div class="hint">Si en este equipo los discos están montados en otro lugar, cambia el comienzo de las rutas. ' + mark("good") + ' = los datos están ahí.</div>')),
+		frow("Carpetas", `<div class="rs-map"><span>Cambiar</span><input type="text" id="rs-from" placeholder="/ruta/en/el/respaldo" spellcheck="false"><span>por</span><input type="text" id="rs-to" placeholder="${isAndroid() ? "/storage/emulated/0/Download/torrents" : "/ruta/en/este/equipo"}" spellcheck="false"></div>` +
+			'<div id="rs-folders"></div><div class="hint">' + (isAndroid() ? "Si el respaldo viene de un PC, cambia el comienzo de las rutas, por ejemplo /media/datos/Torrents por /storage/emulated/0/Download/torrents. " :
+				"Si en este equipo los discos están montados en otro lugar, cambia el comienzo de las rutas. ") + mark("good") + ' = los datos están ahí.</div>')),
 		[{ label: "Cancelar" }, {
 			label: "Restaurar", cls: "primary",
 			run: async () => {
@@ -2393,7 +2599,7 @@ async function restoreDialog(path) {
 			},
 		}]);
 	const folders = (fs) => {
-		$("#rs-folders", m).innerHTML = fs.length ? `<table class="showgrid rs-table"><thead><tr><th>En el respaldo</th><th>En este equipo</th><th>Torrents</th></tr></thead><tbody>` +
+		$("#rs-folders", m).innerHTML = fs.length ? `<table class="showgrid rs-table"><thead><tr><th>En el respaldo</th><th>${isAndroid() ? "Aquí" : "En este equipo"}</th><th>Torrents</th></tr></thead><tbody>` +
 			fs.map((f) => `<tr><td><code>${pathBreaks(f.from)}</code></td><td><code>${pathBreaks(f.to)}</code></td>` +
 				`<td><span class="${f.found === f.count ? "ok" : f.found ? "" : "bad"}">${f.found === f.count ? mark("good") : f.found ? "" : mark("bad")} ${f.found} de ${f.count}</span></td></tr>`).join("") + "</tbody></table>" : "";
 	};
@@ -2486,7 +2692,7 @@ function portDialog() {
 		frow("Conexiones entrantes", `<div>${seen}</div><div class="hint">Si llegan pares desde internet, el puerto está abierto. Si no llega ninguno, puede estar cerrado o simplemente no hay pares buscando.</div>`),
 		frow("Prueba", `${toolBtn("search", "Probar puerto", 'id="port-test"')}<div id="port-result" class="port-result ${cls}">Estado: ${text}</div>` +
 			'<div class="hint">Le pide a ifconfig.co que intente conectarse a tu IP pública en este puerto. Solo se envía el número de puerto. Tablero hace esta prueba solo al iniciar.</div>'),
-		frow("Si está cerrado", `<div id="port-help">En el router, reenvía el puerto ${fwd} (TCP y UDP) a la IP local de este equipo<span id="port-ip"></span>. Con VPN, el puerto debe abrirse en la VPN.</div>` +
+		frow("Si está cerrado", `<div id="port-help">En el router, reenvía el puerto ${fwd} (TCP y UDP) a la IP local de ${thisDevice()}<span id="port-ip"></span>. Con VPN, el puerto debe abrirse en la VPN.${isAndroid() ? " Con datos móviles casi nunca se puede abrir: la compañía comparte tu IP pública con otros clientes." : ""}</div>` +
 			ufwHTML([`${fwd}/tcp`, `${fwd}/udp`]))),
 		[{ label: "Cerrar", cls: "primary" }]);
 	fetch("/api/local-ip").then((r) => r.json()).then((j) => { if (j.ip) $("#port-ip", m).textContent = ` (${j.ip})`; }).catch(() => {});
@@ -2552,6 +2758,27 @@ function toggleTagFilter(name, multi) {
 	else { f.clear(); f.add(name); }
 	render();
 }
+
+// Dragging a column edge or a splitter: the mouse keeps its mouse events; a finger uses
+// pointer events (touch-action: none on those handles keeps the page from scrolling instead).
+function onDragStart(el, fn) {
+	el.addEventListener("mousedown", fn);
+	el.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") fn(e); });
+}
+function track(e, move, done) {
+	const [mv, end] = e.type === "pointerdown" ? ["pointermove", "pointerup"] : ["mousemove", "mouseup"];
+	const up = () => {
+		removeEventListener(mv, move);
+		removeEventListener(end, up);
+		removeEventListener("pointercancel", up);
+		done();
+	};
+	addEventListener(mv, move);
+	addEventListener(end, up);
+	if (mv === "pointermove") addEventListener("pointercancel", up);
+}
+// After a drag the click that follows must not sort the column; a finger's comes later.
+const clickAfter = (e) => (e.type === "pointerdown" ? 400 : 0);
 
 function wire() {
 	$("#st-port").addEventListener("click", portDialog);
@@ -2697,7 +2924,7 @@ function wire() {
 		savePrefs();
 		renderTable();
 	});
-	thead.addEventListener("mousedown", (e) => {
+	onDragStart(thead, (e) => {
 		if (!e.target.classList.contains("grip")) return;
 		e.preventDefault();
 		e.stopPropagation();
@@ -2705,20 +2932,16 @@ function wire() {
 		const x0 = e.clientX, w0 = c.w, colEl = $$("#torrents col")[visibleCols().indexOf(c)];
 		th.draggable = false;
 		const move = (ev) => { c.w = Math.max(40, w0 + ev.clientX - x0); colEl.style.width = c.w + "px"; };
-		const up = () => {
-			removeEventListener("mousemove", move);
-			removeEventListener("mouseup", up);
+		track(e, move, () => {
 			th.draggable = true;
 			state.resized = true;
-			setTimeout(() => (state.resized = false), 0);
+			setTimeout(() => (state.resized = false), clickAfter(e));
 			savePrefs();
-		};
-		addEventListener("mousemove", move);
-		addEventListener("mouseup", up);
+		});
 	});
 
 	// Splitters.
-	$$("[data-split]").forEach((s) => s.addEventListener("mousedown", (e) => {
+	$$("[data-split]").forEach((s) => onDragStart(s, (e) => {
 		e.preventDefault();
 		const kind = s.dataset.split, x0 = e.clientX, y0 = e.clientY, w0 = prefs.sidebarW, h0 = prefs.detailsH;
 		const move = (ev) => {
@@ -2726,9 +2949,7 @@ function wire() {
 			else prefs.detailsH = Math.max(32, Math.min(innerHeight - 200, h0 - (ev.clientY - y0)));
 			applyLayout();
 		};
-		const up = () => { removeEventListener("mousemove", move); removeEventListener("mouseup", up); savePrefs(); };
-		addEventListener("mousemove", move);
-		addEventListener("mouseup", up);
+		track(e, move, savePrefs);
 	}));
 
 	$(".tabs").addEventListener("click", (e) => {
@@ -2794,7 +3015,7 @@ function wire() {
 		renderDetails();
 	});
 	// Column widths in Archivos, Pares and Trackers: drag the edge of a title.
-	$("#details-body").addEventListener("mousedown", (e) => {
+	onDragStart($("#details-body"), (e) => {
 		const g = e.target.closest("[data-tgrip]");
 		if (!g) return;
 		e.preventDefault();
@@ -2813,17 +3034,13 @@ function wire() {
 			$(`col[data-col="${col}"]`, table).style.width = w[col] + "px";
 			table.style.width = Object.values(w).reduce((n, x) => n + x, 0) + "px";
 		};
-		const up = () => {
-			removeEventListener("mousemove", move);
-			removeEventListener("mouseup", up);
+		track(e, move, () => {
 			state.subResize = false;
 			state.resized = true;
-			setTimeout(() => (state.resized = false), 0);
+			setTimeout(() => (state.resized = false), clickAfter(e));
 			savePrefs();
 			renderDetails();
-		};
-		addEventListener("mousemove", move);
-		addEventListener("mouseup", up);
+		});
 	});
 	$("#details-body").addEventListener("click", (e) => {
 		if (e.target.closest("#opt-reset")) { state.optsHash = null; return renderDetails(); }
@@ -2865,6 +3082,7 @@ function wire() {
 	});
 
 	document.addEventListener("mouseover", (e) => {
+		if (touchUI()) return;   // a tap also sends mouseover; on touch the tap shows it (wireTouchTips)
 		const el = e.target.closest?.("[data-tip]");
 		if (!el) return;
 		const r = el.getBoundingClientRect();
@@ -3005,8 +3223,16 @@ document.fonts?.ready.then(fitBrand);
 	// Known before rTorrent answers, for the "Sin conexión con rTorrent" line.
 	try { state.platform = (await api("/api/access")).platform || "desktop"; } catch { /* desktop */ }
 	applyLayout();
+	if (touchUI()) {
+		// No keyboard on a touch screen: the shortcuts are left out of the button names.
+		$$("#toolbar [title]").forEach((b) => (b.title = b.title.replace(/\s*\([^)]*\)$/, "")));
+		$("#search").placeholder = "Filtrar por nombre…";
+		wireTouchTips();
+		wireTwoFingerReload();
+	}
 	wire();
 	try { state.tagConf = await api("/api/tags"); } catch { /* keep defaults */ }
 	render();
 	refresh();
+	setTimeout(firstBackupFolder, 1500);
 })();

@@ -36,7 +36,7 @@ import zipfile
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.9.2-android.1"
+VERSION = "0.9.2-android.3"
 TAGS_KEY = "tablero_tags"
 OPTS_KEY = "tablero_opts"
 POS_KEY = "tablero_pos"
@@ -80,6 +80,7 @@ CONFIG_DIR = os.path.join(CONFIG_BASE, "tablero")
 PLATFORM = "desktop"
 ANDROID_STORAGE = "/storage/emulated/0"
 USER_FILES = None  # --archivos: where Examinar… and the backups start
+RTORRENT_RC = None  # --rtorrent-rc: the .rc the app gives rTorrent, when Tablero cannot find it
 
 
 
@@ -462,6 +463,8 @@ class RTorrentBackend:
         return self.rt.call("download_list")
 
     def _rc(self):
+        if RTORRENT_RC:
+            return RTORRENT_RC
         return rtorrent_rc(self.rt.call("system.pid"), self.rt.call("system.env", "", "HOME"))
 
     def session_files(self):
@@ -1525,7 +1528,8 @@ def check_folder_name(name):
 def check_target(target):
     target = os.path.expanduser((target or "").strip())
     if not os.path.isabs(target):
-        raise ValueError("Escribe la ruta completa de la carpeta (por ejemplo /home/usuario/Torrents)")
+        raise ValueError("Escribe la ruta completa de la carpeta (por ejemplo %s)" % (
+            "/storage/emulated/0/Download/torrents" if PLATFORM == "android" else "/home/usuario/Torrents"))
     return os.path.realpath(target)
 
 
@@ -2112,7 +2116,9 @@ def remap_path(path, old, new):
     return path
 
 
-BACKUP_NAME = re.compile(r"^tablero-respaldo-\d{4}-\d{2}-\d{2}-\d{4}\.zip$")
+# Imported backups end in -importado (-importado-2…), and are never removed as old ones.
+BACKUP_NAME = re.compile(r"^tablero-respaldo-\d{4}-\d{2}-\d{2}-\d{4}(-importado(-\d+)?)?\.zip$")
+BACKUP_IMPORT_MAX = 1024 ** 3
 BACKUP_EVERY = {"daily": 86400, "weekly": 7 * 86400}
 
 
@@ -2134,7 +2140,8 @@ class Backups:
                 conf = json.load(f)
         except (OSError, ValueError):
             conf = {}
-        return {"folder": conf.get("folder") or os.path.join(user_files(), "Respaldos de Tablero"), "every": conf.get("every", "never"),
+        return {"folder": conf.get("folder") or os.path.join(user_files(), "Respaldos de Tablero"), "chosen": bool(conf.get("folder")),
+                "every": conf.get("every", "never"),
                 "keep": int(conf.get("keep", 5)), "last": conf.get("last", 0), "last_file": conf.get("last_file", "")}
 
     def _save_settings(self, conf):
@@ -2238,7 +2245,7 @@ class Backups:
                 conf["folder"] = folder
             self._save_settings(conf)
             if auto:
-                old = sorted(f for f in os.listdir(folder) if BACKUP_NAME.match(f))[:-conf["keep"]]
+                old = sorted(f for f in os.listdir(folder) if BACKUP_NAME.match(f) and "-importado" not in f)[:-conf["keep"]]
                 for f in old:
                     try:
                         os.remove(os.path.join(folder, f))
@@ -2257,6 +2264,60 @@ class Backups:
                 except (ValueError, OSError, ConnectionError, xmlrpc.client.Fault):
                     pass
             time.sleep(1800)
+
+    @staticmethod
+    def backup_path(path):
+        """A backup Tablero may hand out: named like one, and really a backup."""
+        path = os.path.realpath(path or "")
+        if not BACKUP_NAME.match(os.path.basename(path)):
+            raise ValueError("No es un respaldo de Tablero")
+        Backups._open(path)[0].close()
+        return path
+
+    def import_file(self, read, size, folder="", name=""):
+        """A backup .zip sent from elsewhere (Importar): into the backups folder, named by
+        when it was made, and checked before it is kept."""
+        if size <= 0:
+            raise ValueError("El archivo está vacío")
+        if size > BACKUP_IMPORT_MAX:
+            raise ValueError("El archivo es demasiado grande para ser un respaldo de Tablero")
+        folder = check_target(folder or self.settings()["folder"])
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except OSError as e:
+            raise ValueError("No pude crear la carpeta %s: %s" % (folder, e.strerror or e))
+        tmp = os.path.join(folder, ".importando-%d.tmp" % os.getpid())
+        try:
+            with open(tmp, "wb") as f:
+                left = size
+                while left > 0:
+                    chunk = read(min(left, 1 << 20))
+                    if not chunk:
+                        raise ValueError("El archivo no llegó completo")
+                    f.write(chunk)
+                    left -= len(chunk)
+            try:
+                z, man = self._open(tmp)
+            except ValueError:
+                raise ValueError("%s no es un respaldo de Tablero" % (name or "El archivo"))
+            z.close()
+            stamp = time.strftime("%Y-%m-%d-%H%M", time.localtime(man.get("created") or time.time()))
+            n = 1
+            while True:
+                path = os.path.join(folder, "tablero-respaldo-%s-importado%s.zip" % (stamp, "-%d" % n if n > 1 else ""))
+                if not os.path.exists(path):
+                    break
+                if os.path.getsize(path) == size:  # the same backup, imported again
+                    os.remove(tmp)
+                    return {"path": path, "torrents": len(man.get("torrents", []))}
+                n += 1
+            os.replace(tmp, path)
+        except OSError as e:
+            raise ValueError("No pude guardar el respaldo en %s: %s" % (folder, e.strerror or e))
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        return {"path": path, "torrents": len(man.get("torrents", []))}
 
     @staticmethod
     def _open(path):
@@ -2493,6 +2554,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._guard(lambda: self.backups.list((q.get("folder") or [""])[0]))
         if url.path == "/api/prefs":
             return self._guard(lambda: self.backups.load_prefs())
+        if url.path == "/api/backup-file":
+            return self._backup_file((urllib.parse.parse_qs(url.query).get("path") or [""])[0])
         if url.path == "/api/details":
             h = urllib.parse.parse_qs(url.query)["hash"][0]
             return self._guard(lambda: self.backend.details(h))
@@ -2513,6 +2576,22 @@ class Handler(SimpleHTTPRequestHandler):
         if m:
             return self._logo(m.group(1), m.group(2))
         return super().do_GET()
+
+    def _backup_file(self, path):
+        """Exportar in a browser: the backup as a download."""
+        try:
+            path = self.backups.backup_path(path)
+            size = os.path.getsize(path)
+            f = open(path, "rb")
+        except (ValueError, OSError) as e:
+            return self._json({"error": str(e)}, 404)
+        with f:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Length", str(size))
+            self.send_header("Content-Disposition", 'attachment; filename="%s"' % os.path.basename(path))
+            self.end_headers()
+            shutil.copyfileobj(f, self.wfile)
 
     def _logo(self, name, ext):
         try:
@@ -2535,6 +2614,11 @@ class Handler(SimpleHTTPRequestHandler):
         if self.headers.get("X-Tablero") != "1":
             return self._json({"error": "forbidden"}, 403)
         n = int(self.headers.get("Content-Length") or 0)
+        url = urllib.parse.urlsplit(self.path)
+        if url.path == "/api/backup-import":  # the .zip itself, not JSON
+            q = urllib.parse.parse_qs(url.query)
+            return self._guard(lambda: self.backups.import_file(
+                self.rfile.read, n, (q.get("folder") or [""])[0], (q.get("name") or [""])[0]))
         if n > 8 * 1024 * 1024:
             return self._json({"error": "Demasiado grande"}, 413)
         try:
@@ -2593,7 +2677,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _set_access(self, body):
         if not self._local():
-            raise ValueError("El acceso desde la red solo se cambia en el equipo donde corre Tablero")
+            raise ValueError("El acceso desde la red solo se cambia en %s donde corre Tablero" % (
+                "el teléfono/tableta" if PLATFORM == "android" else "el equipo"))
         r = self.access.save(body.get("lan"), body.get("password") or "")
         if r["restart"]:
             threading.Timer(0.5, restart_self).start()
@@ -2604,7 +2689,7 @@ def run(argv=None):
     """Runs Tablero until stop() (or Ctrl+C). argv as on the command line, for example
     run(["--android", "--scgi", "127.0.0.1:5000", "--config", "/data/.../files/tablero"])
     from an Android app (Chaquopy), in a thread of its own."""
-    global PLATFORM, CONFIG_DIR, USER_FILES, _server
+    global PLATFORM, CONFIG_DIR, USER_FILES, RTORRENT_RC, _server
     p = argparse.ArgumentParser(prog="tablero", description="Interfaz web estilo BiglyBT para rTorrent")
     p.add_argument("--version", action="version", version="Tablero " + VERSION)
     p.add_argument("--scgi", default="127.0.0.1:5000",
@@ -2619,7 +2704,11 @@ def run(argv=None):
                    help="carpeta de configuración (por defecto ~/.config/tablero)")
     p.add_argument("--archivos", default=None,
                    help="carpeta donde empiezan Examinar… y los respaldos (en Android, p. ej. la de descargas de la app)")
+    p.add_argument("--rtorrent-rc", default=None,
+                   help="el rtorrent.rc que usa rTorrent, si Tablero no lo encuentra solo (Cambiar puerto y los respaldos lo usan)")
     a = p.parse_args(argv)
+    if a.rtorrent_rc:
+        RTORRENT_RC = os.path.abspath(os.path.expanduser(a.rtorrent_rc))
     if a.archivos:
         USER_FILES = os.path.abspath(os.path.expanduser(a.archivos))
     if a.android or os.environ.get("TABLERO_PLATAFORMA") == "android":

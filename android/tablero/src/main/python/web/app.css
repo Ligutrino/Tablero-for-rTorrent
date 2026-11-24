@@ -123,6 +123,18 @@ select option { background: var(--panel); color: var(--text); }
 .vsplit { width: 4px; cursor: col-resize; background: var(--line); flex: none; }
 .hsplit { height: 4px; cursor: row-resize; background: var(--line); flex: none; }
 .vsplit:hover, .hsplit:hover { background: var(--accent); }
+/* Touch screens: the menu button shows, and the edges you drag get a wider area for the
+   finger (the line itself stays thin). */
+#toolbar button.touch-only { display: none; }
+.vsplit, .hsplit, #torrents th .grip, table.sub th .grip { touch-action: none; }
+@media (pointer: coarse) {
+  #toolbar button.touch-only { display: flex; }
+  .vsplit, .hsplit { position: relative; z-index: 4; }
+  .hsplit::before { content: ""; position: absolute; left: 0; right: 0; top: -10px; bottom: -10px; }
+  .vsplit::before { content: ""; position: absolute; top: 0; bottom: 0; left: -10px; right: -10px; }
+  #torrents th .grip { right: -9px; width: 18px; }
+  table.sub th .grip { width: 18px; }
+}
 
 /* sidebar */
 #sidebar h3 {
@@ -183,10 +195,6 @@ button.mini:hover { color: var(--text); border-color: var(--accent); }
 
 /* table */
 #table-wrap { flex: 1; overflow: auto; position: relative; min-height: 80px; }
-/* Ventana de escritorio: la barra de desplazamiento horizontal de WebKitGTK flota
-   sobre el contenido; este hueco bajo el último torrent la deja fuera de la última fila.
-   En el navegador la barra ya no tapa nada, así que ahí no se agrega. */
-html.desktop #table-wrap::after { content: ""; display: block; height: 18px; }
 #torrents { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: max-content; min-width: 100%; }
 #torrents th {
   position: sticky; top: 0; z-index: 2;
@@ -380,8 +388,19 @@ body.dropping::after {
 
 @media (max-width: 760px) {
   #sidebar, .vsplit, #toolbar button:not(.icon):not(.speed), #toolbar .sep { display: none; }
-  #toolbar button[data-cmd="add"] { display: flex; }
+  #toolbar button[data-cmd="add"]:not(.icon) { display: flex; } /* :not(.icon) to outweigh the rule above */
   #search { width: 120px; flex: 1; }
+}
+/* Phone width: the two speeds go one above the other and Agregar shows only its +, so
+   the toolbar fits without widening the page. */
+@media (max-width: 560px) {
+  #toolbar .speed { flex-direction: column; align-items: flex-start; gap: 0; padding: 1px 6px; font-size: 11.5px; line-height: 1.25; }
+  .speed .up { margin-left: 0; }
+  .speed b { min-width: 58px; }
+  #search { width: 80px; min-width: 0; }
+  .brand { margin-right: 4px; }
+  #toolbar button[data-cmd="add"] { font-size: 0; gap: 0; padding: 4px 7px; } /* only its + */
+  #toolbar button[data-cmd="add"] svg.ico { width: 17px; height: 17px; }
 }
 /* Phone width: the tabs don't all fit; they scroll sideways instead of pushing the panel. */
 @media (max-width: 600px) {
@@ -457,6 +476,20 @@ table.sub td.placeholder { text-align: center; color: var(--dim); padding: 18px;
 #tagbar .chip.logo-only.on { box-shadow: 0 0 0 2px var(--accent) inset; }
 .slogo { object-fit: contain; flex: none; display: block; }
 #sidebar li .swatch.strip { width: 5px; border-radius: 3px; }
+/* Touch: the "i" beside a text that a mouse shows on hover (only drawn on a touch screen). */
+.info {
+  display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; flex: none;
+  border: 1px solid var(--line); font-size: 10px; font-weight: 700; font-style: normal; line-height: 1; color: var(--dim);
+  margin-left: 5px; vertical-align: 1px; position: relative; text-transform: none; letter-spacing: 0;
+}
+.info::after { content: ""; position: absolute; inset: -9px; }   /* a bigger target for the finger */
+.legend-item .info { margin-left: 0; }
+#reload-hint {
+  position: fixed; top: 10px; left: 50%; z-index: 90; transform: translateX(-50%); pointer-events: none;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow);
+  padding: 6px 14px; font-size: 12.5px; color: var(--dim);
+}
+#reload-hint.ready { color: var(--text); border-color: var(--accent); }
 .help {
   display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%;
   border: 1px solid var(--line); font-size: 10px; cursor: help; color: var(--dim); margin-left: 4px;
@@ -633,9 +666,24 @@ img.tone-black { filter: brightness(0); }
 .add-tor-files { max-height: 240px; overflow: auto; border: 1px solid var(--line); border-radius: 5px; margin-top: 4px; padding: 2px 0; }
 .add-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .add-size { color: var(--dim); font-variant-numeric: tabular-nums; flex: none; }
-.add-tools { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.add-tools { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
 .add-row { display: flex; align-items: center; height: 24px; padding-right: 8px; }
 .add-row:hover { background: var(--hover); }
 #modal .add-row .check { flex: 1; min-width: 0; gap: 8px; height: 24px; }
 .add-row.dir .add-path { font-weight: 500; }
 #modal .warn { color: var(--warn, #f9a825); }
+
+/* Límites de velocidad: overall speed chart (same drawing as the Velocidad tab) */
+.lim-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding-top: 2px; }
+.lim-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; margin-left: auto; }
+.lim-chart { position: relative; height: 190px; margin-top: 8px; }
+.lim-chart canvas { display: block; }
+.lim-chart .placeholder { color: var(--dim); padding: 24px; text-align: center; }
+/* Phone width: the chart takes the whole row, its label goes above it. */
+@media (max-width: 600px) {
+  .frow.lim-row { grid-template-columns: 1fr; row-gap: 8px; }
+  .frow.lim-row > .fl { padding-top: 0; }
+  .frow.lim-row > div { padding-left: 0; }
+  .lim-legend { margin-left: 0; }
+  .lim-chart { height: 170px; }
+}

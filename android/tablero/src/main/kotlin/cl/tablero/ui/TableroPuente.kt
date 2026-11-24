@@ -10,7 +10,11 @@ import io.github.ligutrino.rtorrent.engine.android.EngineProvider
 /**
  * window.TableroAndroid dentro de la interfaz. Los métodos llegan en un hilo de la WebView.
  */
-class TableroPuente(private val act: Activity) {
+class TableroPuente(
+    private val act: Activity,
+    /** "Exportar el elegido…" de los respaldos: el "Guardar como" de Android con ese .zip. */
+    private val exportar: (String) -> Unit,
+) {
 
     @JavascriptInterface
     fun openFolder(path: String) = act.runOnUiThread {
@@ -42,4 +46,8 @@ class TableroPuente(private val act: Activity) {
             EngineProvider.startService(act)
         }, "tablero-restart").start()
     }
+
+    /** ⚙ Opciones → Respaldo → "Exportar el elegido…": path es el .zip del respaldo. */
+    @JavascriptInterface
+    fun exportFile(path: String) = act.runOnUiThread { exportar(path) }
 }

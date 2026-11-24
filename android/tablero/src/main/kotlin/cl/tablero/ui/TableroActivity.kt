@@ -11,12 +11,15 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.Settings
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.widget.Toast
 import io.github.ligutrino.rtorrent.engine.android.EngineProvider
 import org.json.JSONArray
 import org.json.JSONObject
@@ -26,11 +29,16 @@ import kotlin.concurrent.thread
 /**
  * Pantalla con Tablero. Al abrirse arranca el servicio del motor (rtorrent + tablero.py) y carga
  * la interfaz cuando el servidor responde. Recibe también magnet: y .torrent de otras apps.
+ *
+ * Como la ventana GTK en escritorio: pantalla de espera mientras arranca Tablero, enlaces externos en
+ * el navegador, recarga si la página dejó de responder tras rato en segundo plano, zoom con dos dedos
+ * y letra del tamaño del sistema, y "Guardar como" para exportar respaldos.
  */
 class TableroActivity : Activity() {
     private companion object {
         const val REQ_ARCHIVOS = 1
         const val REQ_NOTIFICACIONES = 2
+        const val REQ_EXPORTAR = 3
     }
 
     private lateinit var web: WebView
@@ -38,6 +46,9 @@ class TableroActivity : Activity() {
     private var listo = false
     @Volatile private var vivo = true
     private val pendientes = mutableListOf<String>()
+    private var aExportar: File? = null
+    private var enSegundoPlanoDesde = 0L
+    @Volatile private var espera = 0   // turno de cargarCuandoResponda vigente
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(estado: Bundle?) {
@@ -47,7 +58,12 @@ class TableroActivity : Activity() {
         setContentView(FrameLayout(this).apply { fitsSystemWindows = true; addView(web) })
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true   // Tablero guarda columnas, tema, etc. en localStorage
-        web.addJavascriptInterface(TableroPuente(this), "TableroAndroid")
+        // Zoom con dos dedos (sin los botones + y -), y la letra del tamaño elegido en Ajustes.
+        web.settings.setSupportZoom(true)
+        web.settings.builtInZoomControls = true
+        web.settings.displayZoomControls = false
+        web.settings.textZoom = (resources.configuration.fontScale * 100).toInt()
+        web.addJavascriptInterface(TableroPuente(this, exportar = ::exportar), "TableroAndroid")
         web.webChromeClient = object : WebChromeClient() {
             // "elige archivos" en Agregar torrents
             override fun onShowFileChooser(v: WebView, cb: ValueCallback<Array<Uri>>, p: FileChooserParams): Boolean {
@@ -67,8 +83,15 @@ class TableroActivity : Activity() {
                 pendientes.forEach { web.evaluateJavascript(it, null) }
                 pendientes.clear()
             }
+
+            // Un enlace que sale de Tablero (p. ej. la página de un rastreador): al navegador.
+            override fun shouldOverrideUrlLoading(v: WebView, req: WebResourceRequest): Boolean {
+                val u = req.url.toString()
+                if (u.startsWith(TableroServidor.url) || u.startsWith("about:") || u.startsWith("data:")) return false
+                runCatching { startActivity(Intent(Intent.ACTION_VIEW, req.url)) }
+                return true
+            }
         }
-        web.loadData("<p style='font-family:sans-serif;padding:2em;color:#888'>Iniciando rTorrent y Tablero…</p>", "text/html", "utf-8")
 
         pedirNotificaciones()
         // Un aviso a la vez: primero archivos, al cerrarlo el de batería.
@@ -86,9 +109,64 @@ class TableroActivity : Activity() {
         super.onDestroy()
     }
 
-    private fun cargarCuandoResponda() = thread(name = "tablero-espera", isDaemon = true) {
-        while (vivo && !TableroServidor.responde()) Thread.sleep(500)
-        if (vivo) runOnUiThread { web.loadUrl(TableroServidor.url) }
+    override fun onStop() { super.onStop(); enSegundoPlanoDesde = SystemClock.elapsedRealtime() }
+
+    /** Tras más de 2 minutos fuera, Android puede haber cerrado el proceso que dibuja la página. */
+    override fun onStart() {
+        super.onStart()
+        if (!listo || enSegundoPlanoDesde == 0L) return
+        if (SystemClock.elapsedRealtime() - enSegundoPlanoDesde < 120_000) return
+        var contesto = false
+        web.evaluateJavascript("1") { contesto = it == "1" }
+        web.postDelayed({ if (vivo && !contesto) { listo = false; cargarCuandoResponda() } }, 3000)
+    }
+
+    private fun pantallaEspera(titulo: String, detalle: String) = web.loadDataWithBaseURL(null,
+        "<html><body style='background:#1a1a1a;color:#ddd;font-family:sans-serif;display:grid;place-items:center;height:90vh;margin:0'>" +
+            "<div style='text-align:center'><h3 style='font-weight:500'>$titulo</h3><p style='color:#999'>$detalle</p></div></body></html>",
+        "text/html", "utf-8", null)
+
+    private fun cargarCuandoResponda() {
+        pantallaEspera("Iniciando rTorrent y Tablero…", "")
+        val turno = ++espera
+        thread(name = "tablero-espera", isDaemon = true) {
+            val desde = SystemClock.elapsedRealtime()
+            var avisado = false
+            while (vivo && turno == espera && !TableroServidor.responde()) {
+                if (!avisado && SystemClock.elapsedRealtime() - desde > 20_000) {
+                    avisado = true
+                    runOnUiThread { if (vivo) pantallaEspera("No se pudo iniciar Tablero", "Se sigue reintentando…") }
+                }
+                Thread.sleep(500)
+            }
+            if (vivo && turno == espera) runOnUiThread { web.loadUrl(TableroServidor.url) }
+        }
+    }
+
+    /** "Exportar el elegido…": Guardar como (Descargas, Drive, otra carpeta…) y se copia el .zip. */
+    private fun exportar(ruta: String) {
+        val f = File(ruta)
+        if (!f.isFile) { Toast.makeText(this, "No encontré $ruta", Toast.LENGTH_LONG).show(); return }
+        aExportar = f
+        val i = Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("application/zip").putExtra(Intent.EXTRA_TITLE, f.name)
+        try { startActivityForResult(i, REQ_EXPORTAR) } catch (e: Exception) {
+            aExportar = null
+            Toast.makeText(this, "No hay dónde guardar el respaldo", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun copiarRespaldo(uri: Uri) {
+        val origen = aExportar ?: return
+        aExportar = null
+        thread(name = "tablero-exportar") {
+            val ok = try {
+                contentResolver.openOutputStream(uri)?.use { sal -> origen.inputStream().use { it.copyTo(sal) } } != null
+            } catch (e: Exception) { false }
+            runOnUiThread {
+                Toast.makeText(this, if (ok) "Respaldo exportado" else "No pude exportar el respaldo", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     /** magnet:… o un .torrent (content://): se abre "Agregar torrents" con él. */
@@ -113,6 +191,9 @@ class TableroActivity : Activity() {
         if (requestCode == REQ_ARCHIVOS) {
             elegido?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data))
             elegido = null
+        } else if (requestCode == REQ_EXPORTAR) {
+            val uri = data?.data
+            if (resultCode == RESULT_OK && uri != null) copiarRespaldo(uri) else aExportar = null
         }
     }
 

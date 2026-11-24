@@ -39,8 +39,10 @@ class EngineService : Service() {
     @Volatile private var stopRequested = false
     private var hooksStarted = false
 
+    private fun hookOwnsNotification() = EngineProvider.serviceHooks().any { it.ownsNotification }
+
     private val listener = EngineListener { state ->
-        if (stopRequested) return@EngineListener
+        if (stopRequested || hookOwnsNotification()) return@EngineListener
         when (state) {
             is EngineState.Failed -> {
                 Log.w(TAG, "Motor falló: ${state.message}\n${state.logTail}")
@@ -55,7 +57,7 @@ class EngineService : Service() {
     private val refresh = object : Runnable {
         override fun run() {
             val st = engine.state
-            if (st is EngineState.Running) {
+            if (st is EngineState.Running && !hookOwnsNotification()) {
                 runCatching { engine.sessionStats() }.onSuccess { s ->
                     notifyText(
                         "rTorrent activo · ${s.torrentCount} torrents",
@@ -115,7 +117,7 @@ class EngineService : Service() {
                         handler.post(refresh)
                     } catch (e: Exception) {
                         Log.e(TAG, "No arrancó el motor", e)
-                        notifyText("rTorrent no pudo arrancar", e.message ?: e.toString())
+                        if (!hookOwnsNotification()) notifyText("rTorrent no pudo arrancar", e.message ?: e.toString())
                     }
                 }
             }
