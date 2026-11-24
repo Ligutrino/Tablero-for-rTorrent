@@ -18,6 +18,40 @@ LibreTorrent solo tienen que hablar con `TorrentEngine`.
               rtorrent (daemon, sin ncurses)
 ```
 
+## Interfaz: Tablero
+
+`android/tablero` es la app principal: **Tablero 0.9.2-android.1** (tablero.py + web/) corriendo con
+Python embebido (Chaquopy 17.2, Python 3.12) y mostrado en una WebView, sobre el mismo `:engine`.
+
+```
+ TableroActivity (WebView) ──HTTP 127.0.0.1:8090──► tablero.py ──SCGI──┐
+          │  window.TableroAndroid (TableroPuente)                      ├─► rtorrent (socket Unix)
+          └──► EngineProvider / EngineService ──► :engine ──SCGI───────┘
+```
+
+- Abrir la app arranca el servicio en primer plano. El servicio arranca rtorrent y, mediante un
+  `EngineServiceHook`, también tablero.py. Así las reglas de siembra de Tablero siguen funcionando con la pantalla cerrada.
+- **Apagar rTorrent** en Tablero deja el motor detenido, no en error. La notificación ofrece **Encender**, y
+  `startRtorrent()` / `restartRtorrent()` del puente usan el servicio.
+- **Cambiar puerto** en Tablero edita `rtorrent.rc`. `:engine` reescribe el rc en cada arranque, pero conserva
+  la línea de puerto si otro cliente la cambió (se compara con la marca `# puerto-de-RtorrentConfig:`).
+- El paquete original, la guía y `android.patch` están en `android/tablero/docs/`. Este repo trae un
+  arreglo encima de la versión que entregaste: `/api/shutdown` con rtorrent 0.16.17 (ver `docs/CAMBIOS-ANDROID.md`).
+- `applicationId` = `cl.tablero.android`; se cambia en `android/tablero/build.gradle.kts`.
+
+## Identidad ante trackers y pares
+
+Es la de rtorrent/libtorrent sin modificar, igual que en escritorio con la **misma versión**:
+
+| Dónde | Valor con 0.16.17 |
+|---|---|
+| Peer ID | `-lt1011-` + 12 bytes al azar (`1011` = 0.16.17 en hex) |
+| User-Agent HTTP | `rtorrent/0.16.17` |
+| Handshake de extensiones `v` | `libTorrent 0.16.17` |
+| DHT `v` | `lt\x10\x11` |
+
+Para igualar otra versión de escritorio, cambia las versiones en `native/sources.lock`.
+
 ## Compilar (Docker) e instalar (adb)
 
 Requisitos: Docker 23 o más reciente (BuildKit, que viene por defecto), unos 15 GB libres y conexión a
@@ -34,10 +68,11 @@ docker build -o out .
 docker build --build-arg ABIS="arm64-v8a armeabi-v7a x86_64" -o out .
 
 # Instalar en el teléfono (depuración USB activada)
-adb install -r out/rtorrent-demo-debug.apk
+adb install -r out/tablero-debug.apk          # la app con Tablero
+adb install -r out/rtorrent-demo-debug.apk    # opcional: la app de prueba mínima del motor
 ```
 
-`out/` queda con `rtorrent-demo-debug.apk` y `native/<abi>/librtorrent.so`.
+`out/` queda con `tablero-debug.apk`, `rtorrent-demo-debug.apk` y `native/<abi>/librtorrent.so`. Las dos apps son independientes: cada una tiene sus propios torrents y sus propias descargas.
 El APK se firma con `android/debug.keystore` (incluido a propósito), así que cada compilación nueva
 se instala encima de la anterior con `adb install -r`.
 
@@ -66,7 +101,7 @@ Las descargas van a `/sdcard/Android/data/io.github.ligutrino.rtorrent.demo/file
 docker build --target hosttest .
 ```
 
-Compila rtorrent para Linux con las mismas recetas y ejecuta `tools/host-test`, que usa el código
+Compila rtorrent para Linux con las mismas recetas y ejecuta `tools/host-test`, más `tools/tablero-test.sh` (recorre la API de Tablero contra ese rtorrent),, que usa el código
 Kotlin real del motor (sin la parte Android). La prueba arranca el daemon, añade un magnet y un .torrent,
 verifica datos, pausa, reanuda, aplica límites, quita y borra archivos, adopta un daemon ya vivo, lo
 para y comprueba que la sesión se restaura. Fuera de Docker: `tools/host-test.sh`.
@@ -80,6 +115,7 @@ para y comprueba que la sesión se restaura. Fuera de Docker: `tools/host-test.s
 | `native/build.sh <abi>…` | Compilación cruzada con el NDK. Deja `native/out/<abi>/librtorrent.so` |
 | `native/patches/<paquete>/*.patch` | Parches que se aplican al desempaquetar (ahora no hay ninguno) |
 | `android/engine` | Módulo library Kotlin: API neutral, cliente XML-RPC, daemon y servicio |
+| `android/tablero` | App con Tablero (WebView + Chaquopy + puente) |
 | `android/app` | App mínima de prueba |
 | `tools/host-test` | Prueba de integración en la JVM |
 | `Dockerfile` | SDK 35 + NDK r27c, luego el binario, luego el APK (`out`); o `hosttest` |

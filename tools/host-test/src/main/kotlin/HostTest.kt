@@ -126,6 +126,16 @@ fun main(args: Array<String>) {
     Thread.sleep(500)
     list = engine.torrents()
     check(list.any { it.hash == mh }, "sesión restaurada tras reinicio (${list.size} torrents)")
+    // Otro cliente (Tablero) cambia el puerto en el rc y apaga rtorrent por XML-RPC.
+    cfg.rcFile.writeText(cfg.rcFile.readText().replace("network.port_range.set = 50000-50010", "network.port_range.set = 50007-50007"))
+    XmlRpcClient(JvmPlatform.connector(cfg.socketFile)).callIgnoringEmpty("system.shutdown.normal")
+    for (i in 0 until 50) { if (engine.state == EngineState.Stopped) break; Thread.sleep(200) }
+    check(engine.state == EngineState.Stopped, "apagado externo -> Stopped (no Failed): ${engine.state}")
+    engine.start()
+    check(engine.sessionStats().listenPort == 50007, "conserva el puerto que cambió otro cliente: ${engine.sessionStats().listenPort}")
+    engine.stop()
+    engine.start()
+    check(engine.sessionStats().listenPort == 50007, "y lo sigue conservando en el siguiente arranque")
     engine.stop()
     println("estados: $states")
     println(engine.logTail(2000))

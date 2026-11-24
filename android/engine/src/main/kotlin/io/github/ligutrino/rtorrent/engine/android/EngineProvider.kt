@@ -18,8 +18,27 @@ import java.io.File
  * engine.addUri("magnet:?xt=urn:btih:...")         // desde un hilo de fondo
  * ```
  */
+/**
+ * Algo que debe vivir junto con el servicio, aunque no haya ninguna pantalla abierta
+ * (por ejemplo el servidor de Tablero, que aplica reglas de siembra). Los métodos corren en el hilo
+ * del servicio, no en el principal.
+ */
+interface EngineServiceHook {
+    /** El servicio pasó a primer plano. Se llama una vez por vida del servicio, antes de arrancar rtorrent. */
+    fun onServiceStarted(context: Context, engine: RtorrentEngine) {}
+    /** El servicio se va a detener (después de parar rtorrent). */
+    fun onServiceStopping(context: Context) {}
+}
+
 object EngineProvider {
     @Volatile private var engine: RtorrentEngine? = null
+    private val hooks = java.util.concurrent.CopyOnWriteArrayList<EngineServiceHook>()
+
+    /** Registrar en `Application.onCreate()`, antes de arrancar el servicio. */
+    @JvmStatic
+    fun addServiceHook(hook: EngineServiceHook) { hooks.addIfAbsent(hook) }
+
+    internal fun serviceHooks(): List<EngineServiceHook> = hooks
     @Volatile private var pendingConfig: RtorrentConfig? = null
 
     /** Opcional: cambia la configuración. Debe llamarse antes del primer [get]. */

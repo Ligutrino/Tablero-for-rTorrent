@@ -37,11 +37,18 @@ class EngineService : Service() {
     private lateinit var handler: Handler
     private var wakeLock: PowerManager.WakeLock? = null
     @Volatile private var stopRequested = false
+    private var hooksStarted = false
 
     private val listener = EngineListener { state ->
-        if (state is EngineState.Failed && !stopRequested) {
-            Log.w(TAG, "Motor falló: ${state.message}\n${state.logTail}")
-            notifyText("Error del motor", state.message)
+        if (stopRequested) return@EngineListener
+        when (state) {
+            is EngineState.Failed -> {
+                Log.w(TAG, "Motor falló: ${state.message}\n${state.logTail}")
+                notifyText("Error del motor", state.message, withStartAction = true)
+            }
+            // Otro cliente lo apagó (p. ej. Tablero): el servicio sigue, por si lo vuelven a encender.
+            is EngineState.Stopped -> notifyText("rTorrent apagado", "Toca Encender para volver a iniciarlo", withStartAction = true)
+            else -> {}
         }
     }
 
@@ -84,6 +91,7 @@ class EngineService : Service() {
                 handler.removeCallbacks(refresh)
                 handler.post {
                     runCatching { engine.stop() }.onFailure { Log.w(TAG, "stop", it) }
+                    stopHooks()
                     releaseWakeLock()
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
@@ -94,6 +102,13 @@ class EngineService : Service() {
                 goForeground("Iniciando rTorrent…", "")
                 acquireWakeLock()
                 handler.post {
+                    if (!hooksStarted) {
+                        hooksStarted = true
+                        val rt = EngineProvider.rtorrent(this)
+                        EngineProvider.serviceHooks().forEach { h ->
+                            runCatching { h.onServiceStarted(this, rt) }.onFailure { Log.e(TAG, "hook", it) }
+                        }
+                    }
                     try {
                         engine.start()
                         handler.removeCallbacks(refresh)
@@ -113,7 +128,7 @@ class EngineService : Service() {
         engine.removeListener(listener)
         // Si el sistema destruye el servicio sin ACTION_STOP, intentar una parada ordenada.
         if (!stopRequested && engine.state !is EngineState.Stopped) {
-            Thread({ runCatching { engine.stop() } }, "rtorrent-stop").start()
+            Thread({ runCatching { engine.stop() }; stopHooks() }, "rtorrent-stop").start()
         }
         releaseWakeLock()
         worker.quitSafely()
@@ -121,6 +136,15 @@ class EngineService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    @Synchronized
+    private fun stopHooks() {
+        if (!hooksStarted) return
+        hooksStarted = false
+        EngineProvider.serviceHooks().forEach { h ->
+            runCatching { h.onServiceStopping(this) }.onFailure { Log.e(TAG, "hook", it) }
+        }
+    }
 
     private fun goForeground(title: String, text: String) {
         val n = buildNotification(title, text)
@@ -131,11 +155,12 @@ class EngineService : Service() {
         }
     }
 
-    private fun notifyText(title: String, text: String) {
-        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIFICATION_ID, buildNotification(title, text))
+    private fun notifyText(title: String, text: String, withStartAction: Boolean = false) {
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+            .notify(NOTIFICATION_ID, buildNotification(title, text, withStartAction))
     }
 
-    private fun buildNotification(title: String, text: String): Notification {
+    private fun buildNotification(title: String, text: String, withStartAction: Boolean = false): Notification {
         val stopIntent = PendingIntent.getService(
             this, 1,
             Intent(this, EngineService::class.java).setAction(ACTION_STOP),
@@ -144,15 +169,22 @@ class EngineService : Service() {
         val launch = packageManager.getLaunchIntentForPackage(packageName)?.let {
             PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
-        return Notification.Builder(this, CHANNEL_ID)
+        val b = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(title)
             .setContentText(text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(launch)
-            .addAction(Notification.Action.Builder(null, "Detener", stopIntent).build())
-            .build()
+        if (withStartAction) {
+            val startIntent = PendingIntent.getService(
+                this, 2,
+                Intent(this, EngineService::class.java).setAction(ACTION_START),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            b.addAction(Notification.Action.Builder(null, "Encender", startIntent).build())
+        }
+        return b.addAction(Notification.Action.Builder(null, "Detener", stopIntent).build()).build()
     }
 
     private fun acquireWakeLock() {

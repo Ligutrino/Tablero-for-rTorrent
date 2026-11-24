@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tablero para rTorrent</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='6' fill='%231a1a1a'/%3E%3Crect x='4' y='4' width='12' height='56' fill='%231d4e9e'/%3E%3Cpath d='M16 4h44v16H32a16 16 0 0 0-16 16z' fill='%23f2c200'/%3E%3Cpath d='M46 20h14v40H26V36a6 6 0 0 1 6-6h14z' fill='%23d7262e'/%3E%3Ccircle cx='50' cy='50' r='6' fill='%23f2efe6'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header id="toolbar">
+  <div class="brand"><svg class="logo" viewBox="4 4 56 56" aria-hidden="true"><rect width="64" height="64" rx="6" class="logo-bg"/><rect x="4" y="4" width="12" height="56" fill="#1d4e9e"/><path d="M16 4h44v16H32a16 16 0 0 0-16 16z" fill="#f2c200"/><path d="M46 20h14v40H26V36a6 6 0 0 1 6-6h14z" fill="#d7262e"/><circle cx="50" cy="50" r="6" class="logo-dot"/></svg><span class="brand-name"><b>Tablero</b><small>para rTorrent</small></span></div>
+  <button data-cmd="add" title="Agregar torrent o enlace magnet (Ctrl+O)"><i data-icon="plus"></i>Agregar</button>
+  <span class="sep"></span>
+  <button data-cmd="start" title="Iniciar"><i data-icon="play"></i>Iniciar</button>
+  <button data-cmd="pause" title="Pausar"><i data-icon="pause"></i>Pausar</button>
+  <button data-cmd="stop" title="Detener"><i data-icon="square"></i>Detener</button>
+  <button data-cmd="remove" title="Eliminar (Supr)"><i data-icon="trash-2"></i>Eliminar</button>
+  <span class="sep"></span>
+  <button data-cmd="tags" title="Asignar etiquetas (T)"><i data-icon="tag"></i>Etiquetas</button>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Filtrar por nombre…  ( / )" autocomplete="off">
+  <button class="speed" data-cmd="limits" title="Límites de velocidad">
+    <span class="down">↓ <b id="sp-down">0 B/s</b></span>
+    <span class="up">↑ <b id="sp-up">0 B/s</b></span>
+  </button>
+  <button data-cmd="settings" class="icon" title="Opciones"><i data-icon="settings"></i></button>
+</header>
+
+<div id="main">
+  <aside id="sidebar">
+    <section>
+      <h3>Biblioteca</h3>
+      <ul id="status-list"></ul>
+    </section>
+    <section>
+      <h3>Etiquetas <span class="h3-tools"><span id="side-mode"></span><button class="mini" data-cmd="new-tag" title="Nueva etiqueta">＋</button></span></h3>
+      <ul id="tag-list"></ul>
+    </section>
+    <section>
+      <h3>Rastreadores</h3>
+      <ul id="tracker-list"></ul>
+    </section>
+  </aside>
+  <div class="vsplit" data-split="sidebar"></div>
+
+  <div id="content">
+    <div id="tagbar"></div>
+    <div id="table-wrap">
+      <table id="torrents">
+        <colgroup></colgroup>
+        <thead><tr></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="empty" hidden></div>
+    </div>
+    <div class="hsplit" data-split="details"></div>
+    <section id="details">
+      <nav class="tabs">
+        <button data-tab="general" class="on">General</button>
+        <button data-tab="files">Archivos</button>
+        <button data-tab="peers">Pares</button>
+        <button data-tab="trackers">Rastreadores</button>
+        <button data-tab="pieces">Piezas</button>
+        <button data-tab="speed">Velocidad</button>
+        <button data-tab="options">Opciones</button>
+        <span class="spacer"></span>
+        <span id="details-title"></span>
+      </nav>
+      <div id="details-body"></div>
+    </section>
+  </div>
+</div>
+
+<footer id="statusbar">
+  <span id="st-conn">Conectando…</span>
+  <span class="spacer"></span>
+  <button type="button" id="st-port" hidden></button>
+  <span id="st-count"></span>
+  <span id="st-sel"></span>
+</footer>
+
+<div id="menu" class="menu" hidden></div>
+<div id="modal-bg" hidden><div id="modal"></div></div>
+<div id="toast" hidden></div>
+<div id="tip" hidden></div>
+
+<script src="icons.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

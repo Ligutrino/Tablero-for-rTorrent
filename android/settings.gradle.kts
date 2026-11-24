@@ -14,4 +14,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "rtorrent-android"
-include(":engine", ":app")
+include(":engine", ":app", ":tablero")

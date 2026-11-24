@@ -49,8 +49,16 @@ class RtorrentDaemon(
     fun start(timeoutMs: Long = 20_000, onUnexpectedExit: (exitCode: Int) -> Unit): Started {
         stopping = false
         ping()?.let { v ->
-            pid = (rpc.call("system.pid") as? Long)?.toInt() ?: -1
-            return Started(v, pid, adopted = true)
+            val adoptedPid = (rpc.call("system.pid") as? Long)?.toInt() ?: -1
+            pid = adoptedPid
+            // Sin handle del proceso: vigilar /proc/<pid> para enterarse si termina.
+            if (adoptedPid > 0) Thread({
+                while (platform.isAlive(adoptedPid)) {
+                    try { Thread.sleep(2000) } catch (e: InterruptedException) { return@Thread }
+                }
+                if (!stopping && pid == adoptedPid) { pid = -1; onUnexpectedExit(if (ping() == null) 0 else -1) }
+            }, "rtorrent-watcher").apply { isDaemon = true; start() }
+            return Started(v, adoptedPid, adopted = true)
         }
 
         if (!executable.exists()) {
@@ -68,7 +76,11 @@ class RtorrentDaemon(
         rotate(config.logFile)
         rotate(config.stdoutFile)
 
-        config.rcFile.writeText(config.render(config.ipv6 ?: platform.ipv6Available()), Charsets.UTF_8)
+        val previousRc = if (config.rcFile.isFile) config.rcFile.readText(Charsets.UTF_8) else null
+        config.rcFile.writeText(
+            config.render(config.ipv6 ?: platform.ipv6Available(), RtorrentConfig.externalPortLine(previousRc)),
+            Charsets.UTF_8,
+        )
 
         val pb = ProcessBuilder(executable.absolutePath, "-n", "-o", "import=${config.rcFile.absolutePath}")
             .directory(config.baseDir)
@@ -104,7 +116,7 @@ class RtorrentDaemon(
 
         Thread({
             val code = try { p.waitFor() } catch (e: InterruptedException) { return@Thread }
-            if (process === p) process = null
+            if (process === p) { process = null; pid = -1 }
             if (!stopping) onUnexpectedExit(code)
         }, "rtorrent-watcher").apply { isDaemon = true; start() }
 

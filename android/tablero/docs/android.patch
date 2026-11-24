@@ -1,0 +1,366 @@
+--- escritorio/tablero.py
++++ android/tablero.py
+@@ -36,7 +36,7 @@
+ from http import HTTPStatus
+ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+ 
+-VERSION = "0.9.2"
++VERSION = "0.9.2-android.1"
+ TAGS_KEY = "tablero_tags"
+ OPTS_KEY = "tablero_opts"
+ POS_KEY = "tablero_pos"
+@@ -75,6 +75,24 @@
+ WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
+ CONFIG_BASE = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+ CONFIG_DIR = os.path.join(CONFIG_BASE, "tablero")
++# "desktop", or "android" (--android): the interface then hides what only works on a
++# PC (xdg-open, systemctl, apt, ufw) and uses window.TableroAndroid when the app gives it.
++PLATFORM = "desktop"
++ANDROID_STORAGE = "/storage/emulated/0"
++USER_FILES = None  # --archivos: where Examinar… and the backups start
++
++
++
++
++def user_files():
++    """Where the user's own files are: ~ on a PC; on Android the shared storage
++    (Termux's ~ and an app's home are private, no file manager shows them)."""
++    if USER_FILES:
++        return USER_FILES
++    # Without "Acceso a todos los archivos" the shared storage exists but can't be read.
++    if PLATFORM == "android" and os.access(ANDROID_STORAGE, os.R_OK | os.W_OK | os.X_OK):
++        return ANDROID_STORAGE
++    return os.path.expanduser("~")
+ 
+ 
+ def move_old_config(base=CONFIG_BASE):
+@@ -793,7 +811,12 @@
+         return path
+ 
+     def open_folder(self, h, index=None, sub=None):
+-        return open_in_file_manager(self.data_path(h, index, sub))
++        path = self.data_path(h, index, sub)
++        if PLATFORM == "android":
++            # No file manager to start from here: the Android app opens it (window.TableroAndroid).
++            folder = path if os.path.isdir(path) else os.path.dirname(path)
++            return {"folder": folder, "path": path, "android": True}
++        return open_in_file_manager(path)
+ 
+     @staticmethod
+     def throttle_of(h):
+@@ -1207,7 +1230,7 @@
+ 
+ def list_dirs(path):
+     """Subfolders of a folder on this computer, for the folder picker."""
+-    path = os.path.realpath(os.path.expanduser(path or "~"))
++    path = os.path.realpath(os.path.expanduser(path or user_files()))
+     while not os.path.isdir(path):
+         path = os.path.dirname(path)
+     try:
+@@ -2105,7 +2128,7 @@
+                 conf = json.load(f)
+         except (OSError, ValueError):
+             conf = {}
+-        return {"folder": conf.get("folder") or os.path.expanduser("~/Respaldos de Tablero"), "every": conf.get("every", "never"),
++        return {"folder": conf.get("folder") or os.path.join(user_files(), "Respaldos de Tablero"), "every": conf.get("every", "never"),
+                 "keep": int(conf.get("keep", 5)), "last": conf.get("last", 0), "last_file": conf.get("last_file", "")}
+ 
+     def _save_settings(self, conf):
+@@ -2367,8 +2390,19 @@
+         return False
+ 
+ 
++_server = None          # the running ThreadingHTTPServer
++_restart = threading.Event()
++
++
+ def restart_self():
+     """Starts Tablero again in the same process, to listen on another address."""
++    if PLATFORM == "android" or __name__ != "__main__":
++        # Embedded (Chaquopy) or on Android: exec would replace the whole app,
++        # so run() only opens the server again on the new address.
++        _restart.set()
++        if _server:
++            threading.Thread(target=_server.shutdown, daemon=True).start()
++        return
+     sys.stdout.flush()
+     sys.stderr.flush()
+     os.execv(sys.executable, [sys.executable, os.path.abspath(sys.argv[0])] + sys.argv[1:])
+@@ -2445,9 +2479,9 @@
+             return
+         url = urllib.parse.urlsplit(self.path)
+         if url.path == "/api/access":
+-            return self._json(dict(self.access.info(), local=self._local()))
++            return self._json(dict(self.access.info(), local=self._local(), platform=PLATFORM))
+         if url.path == "/api/torrents":
+-            return self._guard(lambda: dict(self.backend.list(), tablero=VERSION))
++            return self._guard(lambda: dict(self.backend.list(), tablero=VERSION, platform=PLATFORM))
+         if url.path == "/api/backups":
+             q = urllib.parse.parse_qs(url.query)
+             return self._guard(lambda: self.backups.list((q.get("folder") or [""])[0]))
+@@ -2560,8 +2594,12 @@
+         return r
+ 
+ 
+-def main():
+-    p = argparse.ArgumentParser(description="Interfaz web estilo BiglyBT para rTorrent")
++def run(argv=None):
++    """Runs Tablero until stop() (or Ctrl+C). argv as on the command line, for example
++    run(["--android", "--scgi", "127.0.0.1:5000", "--config", "/data/.../files/tablero"])
++    from an Android app (Chaquopy), in a thread of its own."""
++    global PLATFORM, CONFIG_DIR, USER_FILES, _server
++    p = argparse.ArgumentParser(prog="tablero", description="Interfaz web estilo BiglyBT para rTorrent")
+     p.add_argument("--version", action="version", version="Tablero " + VERSION)
+     p.add_argument("--scgi", default="127.0.0.1:5000",
+                    help="host:puerto o ruta del socket SCGI de rTorrent (por defecto 127.0.0.1:5000)")
+@@ -2569,9 +2607,22 @@
+                    help="dirección donde escuchar (por defecto la de ⚙ Opciones: este equipo o toda la red)")
+     p.add_argument("--port", type=int, default=8090, help="puerto web (por defecto 8090)")
+     p.add_argument("--demo", action="store_true", help="usar torrents de prueba, sin rTorrent")
+-    a = p.parse_args()
+-
+-    move_old_config()
++    p.add_argument("--android", action="store_true",
++                   help="interfaz para Android: oculta lo que solo funciona en un PC (xdg-open, systemctl, apt, ufw)")
++    p.add_argument("--config", default=None,
++                   help="carpeta de configuración (por defecto ~/.config/tablero)")
++    p.add_argument("--archivos", default=None,
++                   help="carpeta donde empiezan Examinar… y los respaldos (en Android, p. ej. la de descargas de la app)")
++    a = p.parse_args(argv)
++    if a.archivos:
++        USER_FILES = os.path.abspath(os.path.expanduser(a.archivos))
++    if a.android or os.environ.get("TABLERO_PLATAFORMA") == "android":
++        PLATFORM = "android"
++    if a.config:
++        CONFIG_DIR = os.path.abspath(os.path.expanduser(a.config))
++    else:
++        move_old_config()
++    os.makedirs(CONFIG_DIR, exist_ok=True)
+     Handler.backend = DemoBackend() if a.demo else RTorrentBackend(a.scgi)
+     Handler.history = History(Handler.backend)
+     Handler.tagstore = TagStore(os.path.join(
+@@ -2582,14 +2633,33 @@
+                               Handler.backend, Handler.tagstore, Handler.access)
+     if not a.demo:
+         threading.Thread(target=Handler.backups.run_schedule, daemon=True).start()
+-    bind = Handler.access.listening
+-    server = ThreadingHTTPServer((bind, a.port), Handler)
+-    print("Tablero %s en http://%s:%d  (%s)" % (VERSION, bind, a.port,
+-                                                "demo" if a.demo else "rTorrent " + a.scgi))
+-    try:
+-        server.serve_forever()
+-    except KeyboardInterrupt:
+-        pass
++    while True:
++        _restart.clear()
++        Handler.access.listening = bind = Handler.access.wanted_bind()
++        _server = ThreadingHTTPServer((bind, a.port), Handler)
++        _server.daemon_threads = True
++        print("Tablero %s en http://%s:%d  (%s%s)" % (VERSION, bind, a.port,
++                                                      "demo" if a.demo else "rTorrent " + a.scgi,
++                                                      ", Android" if PLATFORM == "android" else ""), flush=True)
++        try:
++            _server.serve_forever()
++        except KeyboardInterrupt:
++            _restart.clear()
++        finally:
++            _server.server_close()
++        if not _restart.is_set():
++            break
++
++
++def stop():
++    """Stops run() from another thread (the Android app, when its service ends)."""
++    _restart.clear()
++    if _server:
++        _server.shutdown()
++
++
++def main():
++    run()
+ 
+ 
+ if __name__ == "__main__":
+--- escritorio/web/app.js
++++ android/web/app.js
+@@ -24,6 +24,38 @@
+ 	`<button type="button" class="tbtn${on ? " on" : ""}" ${attrs}${on ? ' aria-pressed="true"' : ""}>${iconHTML("lucide:" + icon)}<span>${label}</span></button>`;
+ // A command for the terminal, with its own Copiar button (any [data-copy-cmd] copies).
+ const cmdHTML = (text) => `<span class="cmd"><code>${esc(text)}</code>${toolBtn("copy", "Copiar", `data-copy-cmd="${esc(text)}" title="Copiar el comando"`)}</span>`;
++
++// ------------------------------------------------------------ android
++// tablero.py --android: no systemctl, apt, ufw or file manager to start. The Android app
++// can give window.TableroAndroid (addJavascriptInterface) with any of: openFolder(path),
++// startRtorrent(), restartRtorrent(); what it lacks is hidden or explained in words.
++const isAndroid = () => state.platform === "android";
++const androidCan = (fn) => typeof window.TableroAndroid?.[fn] === "function";
++const canOpenFolder = () => !isAndroid() || androidCan("openFolder");
++// How to start or restart rTorrent: a command for the terminal, or on Android the app's button.
++function rtorrentCmdHTML(kind) {
++	if (!isAndroid()) return cmdHTML(kind === "start" ? START_CMD : RESTART_CMD);
++	const fn = kind === "start" ? "startRtorrent" : "restartRtorrent";
++	if (androidCan(fn)) return toolBtn("power", kind === "start" ? "Encender rTorrent" : "Reiniciar rTorrent", `data-android-call="${fn}"`);
++	return "<span>desde la app de Android que ejecuta rTorrent.</span>";
++}
++const ufwHTML = (ports) => (isAndroid() ? "" : `<div class="cmd-list">Si usas el cortafuegos ufw:${ports.map((p) => cmdHTML(`sudo ufw allow ${p}`)).join("")}</div>`);
++// For the Android app: opens Agregar torrents with magnet links and/or .torrent files that
++// tablero.py can read, e.g. tableroAdd({ magnets: ["magnet:?…"], files: [{ name: "a.torrent", path: "/data/…/a.torrent" }] }).
++// For the Android app's Back button: closes the open menu or dialog; false if there was none.
++window.tableroBack = () => {
++	if (menuOpen()) { closeMenu(); return true; }
++	if (modalOpen()) { closeModal(); return true; }
++	return false;
++};
++window.tableroAdd = (o = {}) => {
++	const files = (o.files || []).map((f) => (typeof f === "string" ? { name: f.split("/").pop(), path: f } : f));
++	const zone = modalOpen() && $("#add-drop");
++	if (zone) zone.addFiles(files); else if (!modalOpen()) addDialog(files); else return false;
++	const ta = $("#add-magnet");
++	if (ta && o.magnets?.length) ta.value = [ta.value.trim(), ...o.magnets].filter(Boolean).join("\n");
++	return true;
++};
+ // A choice between a few options: [value, label, icon?].
+ const seg = (name, items, cur) => `<span class="seg">${items.map(([v, n, icon]) =>
+ 	`<button type="button" data-${name}="${v}" class="${String(cur) === String(v) ? "on" : ""}">${icon ? iconHTML("lucide:" + icon) : ""}<span>${n}</span></button>`).join("")}</span>`;
+@@ -595,7 +627,7 @@
+ 			["Creado", date(t.created) || "—"],
+ 			["Prioridad", PRIO[t.priority] || ""],
+ 			["Etiquetas", t.tags.map((x) => chip(x)).join(" ") || "—", true],
+-			["Carpeta", `<span class="folder-line"><span title="${esc(d && d.base_path || t.directory)}">${esc(d && d.base_path || t.directory)}</span>${toolBtn("folder-open", "Abrir", 'data-open-folder title="Abrir en el explorador de archivos"')}</span>`, true],
++			["Carpeta", `<span class="folder-line"><span title="${esc(d && d.base_path || t.directory)}">${esc(d && d.base_path || t.directory)}</span>${canOpenFolder() ? toolBtn("folder-open", "Abrir", 'data-open-folder title="Abrir en el explorador de archivos"') : ""}</span>`, true],
+ 			["Identificador", `<code title="Huella única del torrent (info-hash), la misma en toda la red">${t.hash}</code>`, true],
+ 			...(t.message ? [["Mensaje", `<span class="folder-line"><span title="${esc(messageText(t))}">${esc(messageText(t))}</span>${toolBtn("copy", "Copiar", 'data-copy-message title="Copiar el mensaje"')}</span>`, true]] : []),
+ 			...(d && d.chunks ? [["Piezas", `${nf0.format(d.chunks)} × ${size(d.chunk_size)}`]] : []),
+@@ -1187,6 +1219,7 @@
+ 		state.torrents = data.torrents;
+ 		state.byHash = new Map(data.torrents.map((t) => [t.hash, t]));
+ 		state.stats = data.stats;
++		state.platform = data.platform || "desktop";
+ 		state.ok = true;
+ 		reportJobs();
+ 		const c = $("#st-conn");
+@@ -1202,7 +1235,7 @@
+ 		const c = $("#st-conn");
+ 		$("#st-port").hidden = true;
+ 		c.className = "err";
+-		const html = /conectar con rTorrent/.test(e.message) ? `Sin conexión con rTorrent: está apagado o no responde. Para encenderlo: ${cmdHTML(START_CMD)}` : esc(e.message);
++		const html = /conectar con rTorrent/.test(e.message) ? `Sin conexión con rTorrent: está apagado o no responde. Para encenderlo: ${rtorrentCmdHTML("start")}` : esc(e.message);
+ 		if (c._html !== html) { c.innerHTML = html; c._html = html; }
+ 	}
+ 	timer = setTimeout(refresh, Math.max(1, prefs.interval) * 1000);
+@@ -1293,7 +1326,7 @@
+ 		{ label: "Al principio", k: "Ctrl+Inicio", run: () => movePos("top") },
+ 		{ label: "Al final", k: "Ctrl+Fin", run: () => movePos("bottom") },
+ 		"-",
+-		{ label: hs.length > 1 ? "Abrir carpetas" : "Abrir carpeta", run: () => hs.slice(0, 5).forEach((h) => openFolder(h)) },
++		...(canOpenFolder() ? [{ label: hs.length > 1 ? "Abrir carpetas" : "Abrir carpeta", run: () => hs.slice(0, 5).forEach((h) => openFolder(h)) }] : []),
+ 		{ label: "Reubicar datos…", run: relocateDialog },
+ 		{ label: "Renombrar carpeta…", disabled: ts.length !== 1 || ts[0].files < 2, run: renameFolderDialog },
+ 		{ label: "Verificar datos", run: () => act("/api/action", { action: "recheck", hashes: hs }, "Verificación iniciada: se revisa cada pieza contra el .torrent") },
+@@ -2053,6 +2086,11 @@
+ async function openFolder(hash, index, dir) {
+ 	try {
+ 		const r = await api("/api/open-folder", index !== undefined ? { hash, index } : dir !== undefined ? { hash, dir } : { hash });
++		if (r.android) {
++			if (androidCan("openFolder")) window.TableroAndroid.openFolder(r.folder);
++			else toast(`Carpeta: ${r.folder}`);
++			return;
++		}
+ 		toast(r.demo ? `En el modo demo no hay carpetas reales: se abriría ${r.folder}` : `Abriendo ${r.folder}`);
+ 	} catch (e) { toast(e.message, true); }
+ }
+@@ -2190,7 +2228,7 @@
+ 		windowOptionsHTML(),
+ 		frow("rTorrent", toolBtn("power", "Apagar rTorrent…", 'id="op-shutdown"') +
+ 			'<div class="hint">Lo cierra de forma normal: guarda la sesión y avisa a los rastreadores.</div>' +
+-			'<div class="cmd-list">Para volver a encenderlo:' + cmdHTML(START_CMD) + '</div>'),
++			'<div class="cmd-list">Para volver a encenderlo: ' + rtorrentCmdHTML("start") + '</div>'),
+ 		frow("Respaldo", toolBtn("archive", "Respaldo y restauración…", 'id="op-backup"') +
+ 			'<div class="hint">Para reinstalar el sistema o llevar todo a otro PC: etiquetas, opciones y los torrents de rTorrent con su avance.</div>'),
+ 		frow("Red", `<label class="check"><input type="checkbox" id="op-lan"> Permitir abrir Tablero desde otros equipos de la red</label>
+@@ -2250,7 +2288,7 @@
+ 			`<div>${net.listening ? `Ahora se abre desde la red en <b>${esc(url)}</b>${net.password ? "" : ", sin contraseña"}.` : "Ahora solo se abre en este equipo."}</div>` +
+ 			(net.fixed ? `<div class="hint">Tablero se inició con <code>--bind ${esc(net.fixed)}</code>, que manda sobre esta opción.</div>` : "") +
+ 			'<div class="hint">Desde otro equipo, el navegador pide la contraseña (el usuario puede ser cualquiera). En este equipo no se pide. Viaja sin cifrar: úsalo solo en tu red de casa.</div>' +
+-			`<div class="cmd-list">Si usas el cortafuegos ufw:${cmdHTML(`sudo ufw allow ${net.port}/tcp`)}</div>`;
++			ufwHTML([`${net.port}/tcp`]);
+ 	};
+ 	lanBox.onchange = showNet;
+ 	fetch("/api/access").then((r) => r.json()).then((j) => { net = j; lanBox.checked = j.lan; showNet(); }).catch(() => { netInfo.textContent = ""; });
+@@ -2389,7 +2427,7 @@
+ 	const m = modal("Respaldo restaurado", form(
+ 		frow("Resultado", `<ul class="rs-done">${lines.map((x) => `<li>${x}</li>`).join("") || "<li>No había nada que restaurar.</li>"}</ul>`),
+ 		restart ? frow("rTorrent", toolBtn("power", "Apagar rTorrent…", 'id="rs-shutdown"') +
+-			'<div class="cmd-list">Y luego vuelve a encenderlo:' + cmdHTML(START_CMD) + "</div>") : ""),
++			'<div class="cmd-list">Y luego vuelve a encenderlo: ' + rtorrentCmdHTML("start") + "</div>") : ""),
+ 		[{ label: "Cerrar", cls: "primary", run: () => { render(); refresh(); } }]);
+ 	$("#rs-shutdown", m)?.addEventListener("click", shutdownDialog);
+ }
+@@ -2440,7 +2478,7 @@
+ 		s.incoming_seen ? `Ninguna ahora; la última hace ${eta(Math.max(60, Math.round(Date.now() / 1000 - s.incoming_seen)))}` : "Ninguna desde que se inició Tablero";
+ 	const m = modal("Estado del puerto", form(
+ 		frow("Puerto", `<div>${s.port || "?"} (TCP y UDP)${s.port_open ? "" : " · rTorrent no lo tiene abierto"}</div>` +
+-			(portNext(s) ? `<div>Cambia a ${portNext(s)} al reiniciar rTorrent: ${cmdHTML(RESTART_CMD)}</div>` : "") +
++			(portNext(s) ? `<div>Cambia a ${portNext(s)} al reiniciar rTorrent: ${rtorrentCmdHTML("restart")}</div>` : "") +
+ 			'<div class="hint">Por este puerto llegan las conexiones de otros pares. Si está cerrado igual puedes bajar, pero conectas con menos pares.</div>'),
+ 		frow("Cambiar puerto", `<div class="port-change"><input type="number" id="port-new" min="1024" max="65535" value="${portNext(s) || s.port || ""}">` +
+ 			`${toolBtn("check", "Cambiar", 'id="port-set"')}</div><div id="port-set-result"></div>` +
+@@ -2449,7 +2487,7 @@
+ 		frow("Prueba", `${toolBtn("search", "Probar puerto", 'id="port-test"')}<div id="port-result" class="port-result ${cls}">Estado: ${text}</div>` +
+ 			'<div class="hint">Le pide a ifconfig.co que intente conectarse a tu IP pública en este puerto. Solo se envía el número de puerto. Tablero hace esta prueba solo al iniciar.</div>'),
+ 		frow("Si está cerrado", `<div id="port-help">En el router, reenvía el puerto ${fwd} (TCP y UDP) a la IP local de este equipo<span id="port-ip"></span>. Con VPN, el puerto debe abrirse en la VPN.</div>` +
+-			`<div class="cmd-list">Si usas el cortafuegos ufw:${cmdHTML(`sudo ufw allow ${fwd}/tcp`)}${cmdHTML(`sudo ufw allow ${fwd}/udp`)}</div>`)),
++			ufwHTML([`${fwd}/tcp`, `${fwd}/udp`]))),
+ 		[{ label: "Cerrar", cls: "primary" }]);
+ 	fetch("/api/local-ip").then((r) => r.json()).then((j) => { if (j.ip) $("#port-ip", m).textContent = ` (${j.ip})`; }).catch(() => {});
+ 	const setPort = async () => {
+@@ -2461,7 +2499,7 @@
+ 			const line = cmdHTML(r.line);
+ 			out.className = "port-result " + (r.saved ? "ok" : "warn");
+ 			out.innerHTML = r.demo ? `Modo demo: aquí se guardaría el puerto ${r.port} en la configuración de rTorrent.` :
+-				r.saved ? `Guardado en <code>${esc(r.rc)}</code>. Para aplicarlo, reinicia rTorrent en una terminal: ${cmdHTML(RESTART_CMD)}` :
++				r.saved ? `Guardado en <code>${esc(r.rc)}</code>. Para aplicarlo, reinicia rTorrent${isAndroid() ? "" : " en una terminal"}: ${rtorrentCmdHTML("restart")}` :
+ 				r.rc ? `No tengo permiso para escribir en <code>${esc(r.rc)}</code>. Cambia ahí la línea del puerto (o agrégala) por: ${line} y luego reinicia rTorrent.` :
+ 				`No encontré el archivo de configuración de rTorrent. En él, cambia la línea del puerto (o agrégala) por: ${line} y luego reinicia rTorrent.`;
+ 			refresh();
+@@ -2492,7 +2530,7 @@
+ 			'<div class="hint">Tablero sigue abierto, pero sin conexión hasta que rTorrent vuelva.</div>'),
+ 		...(busy.length ? [frow("En curso", `<div class="warn">${mark("warn")} Reubicar datos sigue trabajando en ${busy.length === 1 ? esc(busy[0].name) : busy.length + " torrents"}. ` +
+ 			"Si apagas ahora, los archivos terminan de moverse, pero no se verifican ni se reanudan: al encender rTorrent, usa Verificar datos e Inicia el torrent.</div>")] : []),
+-		frow("Encenderlo", '<div>En una terminal: ' + cmdHTML(START_CMD) + '</div>')),
++		frow("Encenderlo", `<div>${isAndroid() ? "Después:" : "En una terminal:"} ${rtorrentCmdHTML("start")}</div>`)),
+ 		[{ label: "Cancelar" }, {
+ 			label: "Apagar", cls: "danger",
+ 			run: async () => {
+@@ -2726,7 +2764,7 @@
+ 		if (!tr || !h) return;
+ 		e.preventDefault();
+ 		const run = tr.dataset.dirpath !== undefined ? () => openFolder(h, undefined, tr.dataset.dirpath) : () => openFolder(h, +tr.dataset.file);
+-		openMenu(e.clientX, e.clientY, [{ label: "Mostrar en la carpeta", run }]);
++		if (canOpenFolder()) openMenu(e.clientX, e.clientY, [{ label: "Mostrar en la carpeta", run }]);
+ 	});
+ 	$("#details-body").addEventListener("submit", (e) => {
+ 		e.preventDefault();
+@@ -2734,6 +2772,13 @@
+ 		if (t && e.target.id === "opt-form") saveOptions(t);
+ 	});
+ 	document.addEventListener("click", (e) => {
++		const ac = e.target.closest("[data-android-call]");
++		if (ac && androidCan(ac.dataset.androidCall)) {
++			window.TableroAndroid[ac.dataset.androidCall]();
++			toast(ac.dataset.androidCall === "startRtorrent" ? "Encendiendo rTorrent…" : "Reiniciando rTorrent…");
++			setTimeout(refresh, 2500);
++			return;
++		}
+ 		const b = e.target.closest("[data-copy-cmd]");
+ 		if (b) copy(b.dataset.copyCmd);
+ 	});
+@@ -2957,6 +3002,8 @@
+ 			}
+ 		} catch { /* keep the defaults */ }
+ 	}
++	// Known before rTorrent answers, for the "Sin conexión con rTorrent" line.
++	try { state.platform = (await api("/api/access")).platform || "desktop"; } catch { /* desktop */ }
+ 	applyLayout();
+ 	wire();
+ 	try { state.tagConf = await api("/api/tags"); } catch { /* keep defaults */ }

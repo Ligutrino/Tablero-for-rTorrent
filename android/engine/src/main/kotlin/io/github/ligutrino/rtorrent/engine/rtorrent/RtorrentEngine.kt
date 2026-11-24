@@ -36,7 +36,10 @@ class RtorrentEngine(private val daemon: RtorrentDaemon) : TorrentEngine {
         setState(EngineState.Starting)
         try {
             val started = daemon.start { code ->
-                setState(EngineState.Failed("rtorrent terminó inesperadamente (código $code)", daemon.logTail(8192)))
+                // Código 0 = apagado ordenado pedido por otro cliente (p. ej. "Apagar rTorrent" en Tablero):
+                // no es un error, y el motor queda parado hasta que alguien llame a start().
+                if (code == 0) setState(EngineState.Stopped)
+                else setState(EngineState.Failed("rtorrent terminó inesperadamente (código $code)", daemon.logTail(8192)))
             }
             setState(EngineState.Running("rtorrent ${started.version}", started.pid))
         } catch (e: Exception) {

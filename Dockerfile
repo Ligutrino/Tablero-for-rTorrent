@@ -4,7 +4,8 @@
 #
 #   docker build -o out .
 #
-# Deja en ./out:  rtorrent-demo-debug.apk  y  native/<abi>/librtorrent.so
+# Deja en ./out:  tablero-debug.apk (app con Tablero), rtorrent-demo-debug.apk (prueba mínima)
+#                y native/<abi>/librtorrent.so
 # ABIs por defecto: arm64-v8a. Para más:  --build-arg ABIS="arm64-v8a armeabi-v7a x86_64"
 
 ############################ 1. SDK + NDK ############################
@@ -56,13 +57,15 @@ COPY android/gradle/ ./gradle/
 RUN --mount=type=cache,target=/root/.gradle ./gradlew --no-daemon --version
 COPY android/ ./
 COPY --from=native /src/native/out/ ./engine/src/main/jniLibs/
+ARG ABIS="arm64-v8a"
 RUN --mount=type=cache,target=/root/.gradle \
-    ./gradlew --no-daemon :app:assembleDebug \
-    && cp app/build/outputs/apk/debug/app-debug.apk /rtorrent-demo-debug.apk
+    ./gradlew --no-daemon -Pabis="$(echo ${ABIS} | tr ' ' ',')" :app:assembleDebug :tablero:assembleDebug \
+    && cp app/build/outputs/apk/debug/app-debug.apk /rtorrent-demo-debug.apk \
+    && cp tablero/build/outputs/apk/debug/tablero-debug.apk /tablero-debug.apk
 
 ############################ Opcional: prueba en Linux ############################
 # docker build --target hosttest .
-# Compila rtorrent para Linux y prueba el motor Kotlin (XML-RPC, añadir, pausar, borrar, reinicio) contra él.
+# Compila rtorrent para Linux y prueba contra él el motor Kotlin y la API de Tablero (tablero.py --android).
 FROM sdk AS hosttest
 RUN apt-get update && apt-get install -y --no-install-recommends g++ zlib1g-dev && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
@@ -71,5 +74,5 @@ RUN --mount=type=cache,target=/root/.gradle tools/host-test.sh
 
 ############################ 4. Salida ############################
 FROM scratch AS out
-COPY --from=apk /rtorrent-demo-debug.apk /
+COPY --from=apk /rtorrent-demo-debug.apk /tablero-debug.apk /
 COPY --from=native /src/native/out/ /native/

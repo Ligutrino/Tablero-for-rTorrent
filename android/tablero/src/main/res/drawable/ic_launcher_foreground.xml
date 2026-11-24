@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dibujado a partir de docs/iconos/tablero.svg -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:translateX="18" android:translateY="18" android:scaleX="1.125" android:scaleY="1.125">
+        <path android:fillColor="#1D4E9E" android:pathData="M4,4h12v56h-12z" />
+        <path android:fillColor="#F2C200" android:pathData="M16,4h44v16H32a16,16 0,0 0,-16 16z" />
+        <path android:fillColor="#D7262E" android:pathData="M46,20h14v40H26V36a6,6 0,0 1,6 -6h14z" />
+        <path android:fillColor="#F2EFE6" android:pathData="M44,50a6,6 0,1 0,12 0a6,6 0,1 0,-12 0z" />
+    </group>
+</vector>

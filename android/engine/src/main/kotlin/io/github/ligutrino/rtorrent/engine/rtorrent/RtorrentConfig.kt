@@ -43,7 +43,11 @@ data class RtorrentConfig(
         require(portRange.first in 1..65535 && portRange.last in portRange.first..65535) { "portRange inválido" }
     }
 
-    fun render(ipv6Available: Boolean): String = buildString {
+    /**
+     * @param externalPortLine línea de puerto que otro cliente escribió en el rc anterior (Tablero la
+     *   cambia desde "Estado del puerto → Cambiar puerto"); si no es `null`, tiene prioridad sobre [portRange].
+     */
+    fun render(ipv6Available: Boolean, externalPortLine: String? = null): String = buildString {
         fun line(s: String) { append(s).append('\n') }
         line("# Generado por rtorrent-android en cada arranque: no editar a mano (usa RtorrentConfig.extraRcLines).")
         line("system.daemon.set = true")
@@ -55,7 +59,9 @@ data class RtorrentConfig(
         line("log.open_file = \"main\", ${q(logFile.absolutePath)}")
         line("log.add_output = \"info\", \"main\"")
         line("")
-        line("network.port_range.set = ${portRange.first}-${portRange.last}")
+        val ownPort = "${portRange.first}-${portRange.last}"
+        line("$PORT_MARKER$ownPort")
+        line(externalPortLine ?: "network.port_range.set = $ownPort")
         line("network.port_random.set = no")
         if (!ipv6Available) line("network.block.ipv6.set = true")
         line("network.http.capath.set = ${q(caPath)}")
@@ -87,6 +93,22 @@ data class RtorrentConfig(
     private fun yesNo(b: Boolean) = if (b) "yes" else "no"
 
     companion object {
+        private const val PORT_MARKER = "# puerto-de-RtorrentConfig: "
+        private val PORT_LINE = Regex("""^\s*network\.(port_range|listen\.port\.range)\.set\s*=\s*(\S+)\s*$""")
+
+        /**
+         * Si en [previousRc] la línea de puerto ya no coincide con la que escribimos (marcada con
+         * [PORT_MARKER]), alguien la editó: se devuelve para conservarla. Si no, `null`.
+         */
+        fun externalPortLine(previousRc: String?): String? {
+            if (previousRc == null) return null
+            val lines = previousRc.lines()
+            val ours = lines.firstOrNull { it.startsWith(PORT_MARKER) }?.removePrefix(PORT_MARKER)?.trim()
+            val portLine = lines.lastOrNull { PORT_LINE.matches(it) } ?: return null
+            val value = PORT_LINE.find(portLine)!!.groupValues[2]
+            return if (ours != null && value == ours) null else portLine.trim()
+        }
+
         val DHT_BOOTSTRAP = listOf(
             "dht.transmissionbt.com:6881",
             "router.bittorrent.com:6881",
