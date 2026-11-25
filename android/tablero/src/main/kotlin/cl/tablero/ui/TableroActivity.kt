@@ -39,6 +39,7 @@ class TableroActivity : Activity() {
         private const val REQ_ARCHIVOS = 1
         private const val REQ_NOTIFICACIONES = 2
         private const val REQ_EXPORTAR = 3
+        private const val REQ_CARPETA = 4
         @Volatile private var actual: java.lang.ref.WeakReference<TableroActivity>? = null
 
         /** Salir: cierra la pantalla de Tablero si está abierta y la quita de las apps recientes. */
@@ -53,6 +54,7 @@ class TableroActivity : Activity() {
     @Volatile private var vivo = true
     private val pendientes = mutableListOf<String>()
     private var aExportar: File? = null
+    private var carpetaPedida: String? = null   // id de JS que espera window.tableroFolderPicked
     private var enSegundoPlanoDesde = 0L
     @Volatile private var espera = 0   // turno de cargarCuandoResponda vigente
 
@@ -70,7 +72,7 @@ class TableroActivity : Activity() {
         web.settings.builtInZoomControls = true
         web.settings.displayZoomControls = false
         web.settings.textZoom = (resources.configuration.fontScale * 100).toInt()
-        web.addJavascriptInterface(TableroPuente(this, exportar = ::exportar), "TableroAndroid")
+        web.addJavascriptInterface(TableroPuente(this, exportar = ::exportar, elegirCarpeta = ::elegirCarpeta), "TableroAndroid")
         web.webChromeClient = object : WebChromeClient() {
             // "elige archivos" en Agregar torrents
             override fun onShowFileChooser(v: WebView, cb: ValueCallback<Array<Uri>>, p: FileChooserParams): Boolean {
@@ -151,6 +153,17 @@ class TableroActivity : Activity() {
         }
     }
 
+    /** "Elegir con Android…": el selector de carpetas del sistema (Storage Access Framework). */
+    private fun elegirCarpeta(id: String) {
+        carpetaPedida = id
+        try {
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQ_CARPETA)
+        } catch (e: Exception) {
+            carpetaPedida = null
+            Toast.makeText(this, "Este Android no tiene selector de carpetas", Toast.LENGTH_LONG).show()
+        }
+    }
+
     /** "Exportar el elegido…": Guardar como (Descargas, Drive, otra carpeta…) y se copia el .zip. */
     private fun exportar(ruta: String) {
         val f = File(ruta)
@@ -199,6 +212,23 @@ class TableroActivity : Activity() {
         if (requestCode == REQ_ARCHIVOS) {
             elegido?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data))
             elegido = null
+        } else if (requestCode == REQ_CARPETA) {
+            val id = carpetaPedida ?: return
+            carpetaPedida = null
+            val uri = data?.data
+            if (resultCode != RESULT_OK || uri == null) return
+            val ruta = Carpetas.rutaReal(this, uri)
+            val error = when {
+                ruta == null -> "Android no dio una carpeta del almacenamiento del teléfono. Elige una en \"Almacenamiento interno\" o en la tarjeta SD."
+                !File(ruta).isDirectory -> "No encuentro la carpeta $ruta"
+                !File(ruta).canWrite() -> if (!Environment.isExternalStorageManager())
+                    "rTorrent no puede escribir en $ruta: activa \"Acceso a todos los archivos\" para Tablero en los ajustes de Android."
+                else "Android no deja escribir en $ruta (en una tarjeta SD solo se puede en Android/data/$packageName)."
+                else -> null
+            }
+            web.evaluateJavascript("window.tableroFolderPicked && tableroFolderPicked(" +
+                JSONObject.quote(id) + "," + JSONObject.quote(if (error == null) ruta else "") + "," +
+                JSONObject.quote(error ?: "") + ")", null)
         } else if (requestCode == REQ_EXPORTAR) {
             val uri = data?.data
             if (resultCode == RESULT_OK && uri != null) copiarRespaldo(uri) else aExportar = null

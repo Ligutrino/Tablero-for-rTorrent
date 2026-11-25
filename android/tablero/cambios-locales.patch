@@ -1,7 +1,15 @@
 diff -ru a/tablero.py b/tablero.py
---- a/tablero.py	2026-11-25 00:28:42.653338820 +0000
-+++ b/tablero.py	2026-11-25 00:28:42.656367049 +0000
-@@ -104,10 +104,13 @@
+--- a/tablero.py	2026-11-25 00:45:49.075907131 +0000
++++ b/tablero.py	2026-11-25 00:45:49.078998887 +0000
+@@ -20,6 +20,7 @@
+ import hmac
+ import re
+ import json
++import mimetypes
+ import os
+ import random
+ import secrets
+@@ -104,10 +105,13 @@
      it was read from, to go back to it when a value is emptied."""
      KEYS = ("max_sockets", "peers_max", "uploads_max", "stop_ratio", "stop_hours")
      GLOBAL = {"max_sockets": "network.max_open_sockets"}
@@ -17,7 +25,7 @@ diff -ru a/tablero.py b/tablero.py
  
      def __init__(self, path):
          self.path = path
-@@ -144,8 +147,9 @@
+@@ -144,8 +148,9 @@
              v = o.get(k)
              d[k] = None if v is None or v == "" else max(0, int(v))
          d.pop("peers_min")  # follows peers_max (half of it), as rTorrent's own defaults
@@ -29,7 +37,7 @@ diff -ru a/tablero.py b/tablero.py
          if d["peers_max"] is not None and d["peers_max"] < 1:
              raise ValueError("Deja al menos 1 par por torrent, o el campo vacío")
          d["stop_ratio"] = max(0.0, round(float(o.get("stop_ratio") or 0), 2))
-@@ -167,6 +171,10 @@
+@@ -167,6 +172,10 @@
                  orig = {"pid": pid, **{k: v for k, v in zip(self.GLOBAL, now) if isinstance(v, int)}}
                  self.data["orig"] = orig
                  self._write()
@@ -40,7 +48,7 @@ diff -ru a/tablero.py b/tablero.py
              want = {k: self.data.get(k) if self.data.get(k) is not None else orig.get(k) for k in self.GLOBAL}
          calls = [(m + ".set", ["", want[k]]) for (k, m), cur in zip(self.GLOBAL.items(), now)
                   if want[k] is not None and cur != want[k]]
-@@ -317,6 +325,9 @@
+@@ -317,6 +326,9 @@
                      break
                  chunks.append(data)
          raw = b"".join(chunks)
@@ -50,7 +58,84 @@ diff -ru a/tablero.py b/tablero.py
          sep = raw.find(b"\r\n\r\n")
          payload = raw[sep + 4:] if sep >= 0 else raw
          result, _ = xmlrpc.client.loads(payload.decode("utf-8", "replace"))
-@@ -1182,7 +1193,10 @@
+@@ -459,6 +471,7 @@
+         self.incoming = {"count": 0, "seen": 0, "checked": 0}
+         self.last_pos = 0
+         self.migrated = False
++        self._seq = None  # (rTorrent has d.sequential, when it was asked)
+ 
+     def migrate_old_keys(self):
+         """Mosaico (until 0.8) kept tags, options and position under other names, and named
+@@ -512,10 +525,15 @@
+                     self.migrate_old_keys()
+                     self.migrated = True
+         fields = [f for _, f in TORRENT_FIELDS]
++        seq = self.sequential_supported()
++        if seq:
++            fields.append("d.sequential=")
+         rows = self.rt.call("d.multicall2", "", "main", *fields)
+         out = []
+         for row in rows:
+             t = dict(zip([k for k, _ in TORRENT_FIELDS], row))
++            # None: this rTorrent can't download in order (only rtorrent-android's has d.sequential).
++            t["sequential"] = row[-1] if seq else None
+             t["tags"] = self._tags_of(t.pop("label"), t["tags"])
+             t["opts"] = parse_opts(t["opts"])
+             t["status"] = status_of(t)
+@@ -805,6 +823,8 @@
+             calls = [c for h in hashes for c in (("d.message.set", [h, ""]), ("d.check_hash", [h]))]
+         elif action == "priority":
+             calls = [("d.priority.set", [h, int(kw["value"])]) for h in hashes]
++        elif action == "sequential":
++            calls = [("d.sequential.set", [h, 1 if kw["value"] else 0]) for h in hashes]
+         elif action == "remove":
+             paths, folders = [], []
+             if kw.get("data"):
+@@ -870,6 +890,43 @@
+         calls.append(("d.update_priorities", [h]))
+         return self.rt.multicall(calls)
+ 
++    # ---- in-order download and streaming (rtorrent-android: d.sequential, d.sequential_from)
++
++    def sequential_supported(self):
++        """Whether this rTorrent has d.sequential (asked again every minute)."""
++        now = time.monotonic()
++        if self._seq is None or now - self._seq[1] > 60:
++            try:
++                ok = "d.sequential.set" in self.rt.call("system.listMethods")
++            except (OSError, xmlrpc.client.Fault):
++                ok = False
++            self._seq = (ok, now)
++        return self._seq[0]
++
++    def stream_open(self, h, idx):
++        """A file to play while it downloads: turns on the in-order download, and the file
++        if it was off. Returns where it is and how it maps to the torrent's pieces."""
++        if not self.sequential_supported():
++            raise LookupError("Este rTorrent no puede descargar en orden (falta d.sequential)")
++        files = self.rt.call("f.multicall", h, "", "f.path=", "f.size_bytes=", "f.offset=", "f.priority=")
++        if not 0 <= idx < len(files):
++            raise LookupError("El torrent no tiene el archivo %d" % idx)
++        path, size, offset, prio = files[idx]
++        directory, chunk, chunks = self.rt.multicall([("d.directory", [h]), ("d.chunk_size", [h]), ("d.size_chunks", [h])])
++        calls = [("d.sequential.set", [h, 1])]
++        if prio == 0:
++            calls += [("f.priority.set", ["%s:f%d" % (h, idx), 1]), ("d.update_priorities", [h])]
++        self.rt.multicall(calls)
++        return {"path": os.path.join(directory, path), "size": size, "offset": offset,
++                "chunk": chunk, "chunks": chunks, "name": os.path.basename(path)}
++
++    def completed_pieces(self, h):
++        return bytes.fromhex(self.rt.call("d.bitfield", h) or "")
++
++    def stream_from(self, h, piece):
++        """The player wants piece: the in-order download goes on from there."""
++        self.rt.call("d.sequential_from.set", h, piece)
++
+     def add(self, magnet=None, data=None, directory="", tags=(), start=True, skip=()):
+         dup = self.duplicate(magnet, data)
+         if dup:
+@@ -1182,7 +1239,10 @@
              session = self.rt.call("session.path")
          except Exception:  # noqa: BLE001 - only for the cleanup below
              session = ""
@@ -62,10 +147,238 @@ diff -ru a/tablero.py b/tablero.py
          if session:
              threading.Thread(target=self._clean_session, args=(session,), daemon=True).start()
          return {}
+@@ -1996,6 +2056,8 @@
+                     t["active"] = 0
+                 elif action == "priority":
+                     t["priority"] = int(kw["value"])
++                elif action == "sequential":
++                    t["sequential"] = 1 if kw["value"] else 0
+                 elif action == "recheck" and not t["hashing"]:
+                     t["hashing"], t["hash_checking"] = 3, 0
+             if action == "recheck":
+@@ -2801,6 +2863,9 @@
+ 
+     def do_HEAD(self):
+         if self._authorized():
++            m = re.fullmatch(r"/stream/([0-9A-Fa-f]{40})/(\d+)(?:/[^/]*)?", urllib.parse.urlsplit(self.path).path)
++            if m:
++                return self._stream(m.group(1).upper(), int(m.group(2)))
+             super().do_HEAD()
+ 
+     def do_GET(self):
+@@ -2839,8 +2904,93 @@
+         m = re.fullmatch(r"/logos/([0-9a-f]{16}\.(png|jpg|gif|webp))", url.path)
+         if m:
+             return self._logo(m.group(1), m.group(2))
++        m = re.fullmatch(r"/stream/([0-9A-Fa-f]{40})/(\d+)(?:/[^/]*)?", url.path)
++        if m:
++            return self._stream(m.group(1).upper(), int(m.group(2)))
+         return super().do_GET()
+ 
++    STREAM_WAIT = 120     # seconds without a new piece before giving up on a player
++    STREAM_BLOCK = 256 * 1024
++
++    def _stream(self, h, idx):
++        """Plays a file while it downloads (Reproducir): HTTP with Range for any player,
++        that only sends bytes of complete pieces and waits for the next one. Where the
++        player asks (or seeks) is where the in-order download goes on."""
++        b = self.backend
++        if not hasattr(b, "stream_open"):
++            return self._json({"error": "Reproducir no está disponible en el modo demo"}, 404)
++        try:
++            info = b.stream_open(h, idx)
++        except LookupError as e:
++            return self._json({"error": str(e)}, 404)
++        except (OSError, xmlrpc.client.Fault) as e:
++            return self._json({"error": "rTorrent: %s" % e}, 502)
++        size, chunk, base = info["size"], info["chunk"], info["offset"]
++        start, end, partial = 0, size - 1, False
++        m = re.fullmatch(r"bytes=(\d*)-(\d*)", (self.headers.get("Range") or "").strip())
++        if m and (m.group(1) or m.group(2)):
++            partial = True
++            if m.group(1):
++                start = int(m.group(1))
++                end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
++            else:  # the last N bytes
++                start = max(0, size - int(m.group(2)))
++            if start >= size or start > end:
++                self.send_response(416)
++                self.send_header("Content-Range", "bytes */%d" % size)
++                self.send_header("Content-Length", "0")
++                self.end_headers()
++                return
++        self.send_response(206 if partial else 200)
++        self.send_header("Content-Type", mimetypes.guess_type(info["name"])[0] or "application/octet-stream")
++        self.send_header("Accept-Ranges", "bytes")
++        self.send_header("Content-Length", str(end - start + 1))
++        if partial:
++            self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, size))
++        self.end_headers()
++        if self.command == "HEAD" or size == 0:
++            return
++        pos, asked, idle, f = start, None, 0.0, None
++        try:
++            while pos <= end:
++                try:
++                    have = b.completed_pieces(h)
++                except (OSError, xmlrpc.client.Fault):
++                    have = b""
++                piece = (base + pos) // chunk
++                c = piece
++                while c < info["chunks"] and c // 8 < len(have) and have[c // 8] & (0x80 >> (c % 8)) \
++                        and c * chunk - base <= end:
++                    c += 1
++                ready = min(end + 1, c * chunk - base)  # bytes [pos, ready) are in complete pieces
++                if ready <= pos or f is None and not os.path.isfile(info["path"]):
++                    if asked != piece:
++                        asked = piece
++                        try:
++                            b.stream_from(h, piece)
++                        except (OSError, xmlrpc.client.Fault):
++                            pass
++                    if idle >= self.STREAM_WAIT:
++                        return
++                    time.sleep(0.5)
++                    idle += 0.5
++                    continue
++                idle = 0.0
++                if f is None:
++                    f = open(info["path"], "rb")
++                f.seek(pos)
++                while pos < ready:
++                    data = f.read(min(self.STREAM_BLOCK, ready - pos))
++                    if not data:
++                        return
++                    self.wfile.write(data)
++                    pos += len(data)
++        except (BrokenPipeError, ConnectionResetError):
++            pass  # the player closed it (seeking opens another request)
++        finally:
++            if f:
++                f.close()
++
+     def _set_general(self, body):
+         old = general_peers(self.backend.general.get())
+         new = general_peers(self.backend.general.save(body))
+diff -ru a/web/app.css b/web/app.css
+--- a/web/app.css	2026-11-25 00:45:49.076355327 +0000
++++ b/web/app.css	2026-11-25 00:45:49.079119906 +0000
+@@ -700,3 +700,10 @@
+   .opt-grid .frow > div { padding-left: 0; padding-top: 6px; }
+   .opt-grid .frow > .fl { padding-top: 0; }
+ }
++
++/* Reproducir mientras se descarga (rtorrent-android) */
++.play-btn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin: 0 6px 0 0;
++	padding: 0; border: 1px solid var(--line, #8884); border-radius: 50%; background: transparent; color: inherit; cursor: pointer; vertical-align: middle; }
++.play-btn svg { width: 12px; height: 12px; }
++.play-btn:hover { background: var(--hover, #8882); }
++@media (pointer: coarse) { .play-btn { width: 30px; height: 30px; } .play-btn svg { width: 15px; height: 15px; } }
 diff -ru a/web/app.js b/web/app.js
---- a/web/app.js	2026-11-25 00:28:42.654371929 +0000
-+++ b/web/app.js	2026-11-25 00:28:42.656742966 +0000
-@@ -2350,10 +2350,10 @@
+--- a/web/app.js	2026-11-25 00:45:49.076919152 +0000
++++ b/web/app.js	2026-11-25 00:45:49.079145862 +0000
+@@ -28,7 +28,8 @@
+ // ------------------------------------------------------------ android
+ // tablero.py --android: no systemctl, apt, ufw or file manager to start. The Android app
+ // can give window.TableroAndroid (addJavascriptInterface) with any of: openFolder(path),
+-// startRtorrent(), restartRtorrent(); what it lacks is hidden or explained in words.
++// startRtorrent(), restartRtorrent(), openStream(url, name), pickFolder(id); what it lacks is hidden or
++// explained in words.
+ const isAndroid = () => state.platform === "android";
+ const androidCan = (fn) => typeof window.TableroAndroid?.[fn] === "function";
+ const canOpenFolder = () => !isAndroid() || androidCan("openFolder");
+@@ -819,6 +820,24 @@
+ 	return root;
+ }
+ 
++// ------------------------------------------------------------ play while downloading
++// Only rtorrent-android's rTorrent has d.sequential (t.sequential is null elsewhere).
++const MEDIA_EXT = /\.(mp4|m4v|mkv|webm|avi|mov|wmv|flv|ts|m2ts|mpg|mpeg|3gp|mp3|m4a|aac|flac|ogg|oga|opus|wav|wma)$/i;
++const canStream = (h) => state.byHash.get(h)?.sequential != null;
++const playBtn = (i, path) => canStream(detailHash()) && MEDIA_EXT.test(path)
++	? `<button type="button" class="play-btn" data-play="${i}" title="Reproducir mientras se descarga">${iconHTML("lucide:play")}</button>` : "";
++
++function playFile(h, i) {
++	const f = state.details?.files?.[i];
++	if (!f) return;
++	const name = f.path.split("/").pop();
++	const url = `${location.origin}/stream/${h}/${i}/${encodeURIComponent(name)}`;
++	if (androidCan("openStream")) window.TableroAndroid.openStream(url, name);
++	else window.open(url, "_blank", "noopener");
++	toast("Descarga en orden activada: el reproductor espera las piezas que falten");
++	setTimeout(refresh, 1500);
++}
++
+ function filesHTML(files) {
+ 	const skipped = files.filter((f) => f.priority === 0).length;
+ 	const tools = tableTools("files", `
+@@ -844,7 +863,7 @@
+ 				if (open) walk(d, depth + 1);
+ 			}
+ 			for (const f of order(node.files.filter((f) => shown.has(f.i))))
+-				rowsHTML += `<tr class="${f.priority === 0 ? "skipped" : ""}" data-file="${f.i}"><td class="path" style="padding-left:${26 + depth * 18}px">${esc(f.name)}</td><td class="num">${size(f.size)}</td>` +
++				rowsHTML += `<tr class="${f.priority === 0 ? "skipped" : ""}" data-file="${f.i}"><td class="path" style="padding-left:${26 + depth * 18}px">${playBtn(f.i, f.path)}${esc(f.name)}</td><td class="num">${size(f.size)}</td>` +
+ 					`<td>${fileBar(f.progress)}</td><td>${prioSelect(`data-files="${f.i}"`, f.priority)}</td></tr>`;
+ 		};
+ 		walk(fileTree(files), 0);
+@@ -852,7 +871,7 @@
+ 		const list = files.map((f, i) => ({ ...f, i })).filter((f) => !(prefs.hideSkipped && f.priority === 0) && match(f));
+ 		(fcol ? list.sort((a, b) => tcmp(fcol.get(a), fcol.get(b)) * fs.dir) : list).forEach((f) => {
+ 			const i = f.i;
+-			rowsHTML += `<tr class="${f.priority === 0 ? "skipped" : ""}" data-file="${i}"><td class="path">${esc(f.path)}</td><td class="num">${size(f.size)}</td>` +
++			rowsHTML += `<tr class="${f.priority === 0 ? "skipped" : ""}" data-file="${i}"><td class="path">${playBtn(i, f.path)}${esc(f.path)}</td><td class="num">${size(f.size)}</td>` +
+ 				`<td>${fileBar(f.progress)}</td><td>${prioSelect(`data-files="${i}"`, f.priority)}</td></tr>`;
+ 		});
+ 	}
+@@ -1470,6 +1489,11 @@
+ 		{ label: "Al final", k: "Ctrl+Fin", run: () => movePos("bottom") },
+ 		"-",
+ 		...(canOpenFolder() ? [{ label: hs.length > 1 ? "Abrir carpetas" : "Abrir carpeta", run: () => hs.slice(0, 5).forEach((h) => openFolder(h)) }] : []),
++		...(ts.every((t) => t.sequential != null) ? [{
++			label: "Descargar en orden", chk: ts.every((t) => t.sequential),
++			run: () => act("/api/action", { action: "sequential", hashes: hs, value: ts.every((t) => t.sequential) ? 0 : 1 },
++				ts.every((t) => t.sequential) ? "Descarga normal (por rareza)" : "Descarga en orden: desde el principio, para ver o escuchar mientras baja"),
++		}] : []),
+ 		{ label: "Reubicar datos…", run: relocateDialog },
+ 		{ label: "Renombrar carpeta…", disabled: ts.length !== 1 || ts[0].files < 2, run: renameFolderDialog },
+ 		{ label: "Verificar datos", run: () => act("/api/action", { action: "recheck", hashes: hs }, "Verificación iniciada: se revisa cada pieza contra el .torrent") },
+@@ -2178,8 +2202,20 @@
+ // A folder field with a browser of the folders on the computer running Tablero.
+ function folderPicker(id, value) {
+ 	return `<div class="fp"><div class="row"><input type="text" id="${id}" value="${esc(value || "")}" placeholder="${isAndroid() ? "/storage/emulated/0/Download/Torrents" : "/ruta/a/la/carpeta"}" style="flex:1">` +
+-		`<button type="button" class="btn" data-fp-browse="${id}">Examinar…</button></div><div class="fp-panel" data-fp-for="${id}" hidden></div></div>`;
+-}
++		`<button type="button" class="btn" data-fp-browse="${id}">Examinar…</button>` +
++		(androidCan("pickFolder") ? `<button type="button" class="btn" data-fp-saf="${id}" title="El selector de carpetas de Android">Elegir con Android…</button>` : "") +
++		`</div><div class="fp-panel" data-fp-for="${id}" hidden></div></div>`;
++}
++// Android's folder picker (TableroAndroid.pickFolder): the app turns the folder into its real path
++// and answers with window.tableroFolderPicked(id, path, error).
++const safWaiting = new Map();
++let safSeq = 0;
++window.tableroFolderPicked = (id, path, err) => {
++	const input = safWaiting.get(id);
++	safWaiting.delete(id);
++	if (err) return toast(err, true);
++	if (input && path) setPath(input, path);
++};
+ // Puts a path in the field scrolled to its end, where the folder's own name is.
+ function setPath(input, path) {
+ 	input.value = path;
+@@ -2206,6 +2242,12 @@
+ }
+ function wireFolderPickers(m) {
+ 	m.addEventListener("click", (e) => {
++		const saf = e.target.closest("[data-fp-saf]");
++		if (saf) {
++			const id = String(++safSeq);
++			safWaiting.set(id, $("#" + saf.dataset.fpSaf, m));
++			return window.TableroAndroid.pickFolder(id);
++		}
+ 		const b = e.target.closest("[data-fp-browse]");
+ 		if (b) {
+ 			const panel = $(`[data-fp-for="${b.dataset.fpBrowse}"]`, m);
+@@ -2350,10 +2392,10 @@
  		frow("Bajada máxima", num("lim-down", s.down_limit), "lim-down"),
  		frow("Subida máxima", num("lim-up", s.up_limit) + '<div class="hint">0 = sin límite. Se aplica a todos los torrents juntos; cada torrent puede tener su propio límite en la pestaña Opciones.</div>', "lim-up"),
  		frow("Conexiones", `<div class="opt-cols">
@@ -78,3 +391,24 @@ diff -ru a/web/app.js b/web/app.js
  		frow("Al sembrar", `<div class="opt-rules">
  			<label class="check"><input type="checkbox" id="lim-r-on"${gen.stop_ratio ? " checked" : ""}> Detener al llegar a una proporción de subida de ${snum("lim-ratio", gen.stop_ratio || 2, 0.1)}</label>
  			<label class="check"><input type="checkbox" id="lim-h-on"${gen.stop_hours ? " checked" : ""}> Detener después de ${snum("lim-hours", gen.stop_hours || 24, 0.5)} horas sembrando</label></div>` +
+@@ -3081,7 +3123,10 @@
+ 		if (!tr || !h) return;
+ 		e.preventDefault();
+ 		const run = tr.dataset.dirpath !== undefined ? () => openFolder(h, undefined, tr.dataset.dirpath) : () => openFolder(h, +tr.dataset.file);
+-		if (canOpenFolder()) openMenu(e.clientX, e.clientY, [{ label: "Mostrar en la carpeta", run }]);
++		const items = canOpenFolder() ? [{ label: "Mostrar en la carpeta", run }] : [];
++		if (tr.dataset.file !== undefined && canStream(h))
++			items.push({ label: "Reproducir mientras se descarga", run: () => playFile(h, +tr.dataset.file) });
++		if (items.length) openMenu(e.clientX, e.clientY, items);
+ 	});
+ 	$("#details-body").addEventListener("submit", (e) => {
+ 		e.preventDefault();
+@@ -3089,6 +3134,8 @@
+ 		if (t && e.target.id === "opt-form") saveOptions(t);
+ 	});
+ 	document.addEventListener("click", (e) => {
++		const pb = e.target.closest("[data-play]");
++		if (pb && detailHash()) { e.preventDefault(); e.stopPropagation(); return playFile(detailHash(), +pb.dataset.play); }
+ 		const ac = e.target.closest("[data-android-call]");
+ 		if (ac && androidCan(ac.dataset.androidCall)) {
+ 			window.TableroAndroid[ac.dataset.androidCall]();

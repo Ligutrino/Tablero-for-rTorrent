@@ -44,6 +44,34 @@ Python embebido (Chaquopy 17.2, Python 3.12) y mostrado en una WebView, sobre el
   - El arreglo de `/api/shutdown` con rtorrent 0.16.17.
   - "Conexiones en total" con un mínimo y valor por defecto de 512, porque rtorrent 0.16 rechaza
     `network.max_open_sockets` por debajo de eso. Si había un 250 guardado, se sube a 512.
+  - Descarga en orden y reproducción mientras baja (ver abajo).
+  - El botón "Elegir con Android…" junto a Examinar… (ver abajo).
+
+## Descarga en orden y reproducción mientras baja
+
+rakshasa libtorrent no la trae. Este repo la agrega con `native/patches/libtorrent/0001-sequential.patch` y
+`native/patches/rtorrent/0001-sequential.patch`:
+
+| Comando | Qué hace |
+|---|---|
+| `d.sequential` / `d.sequential.set = 1` | Elige las piezas en orden desde el principio, no al azar por rareza. Queda guardado en la sesión. |
+| `d.sequential_from` / `d.sequential_from.set = N` | Desde qué pieza sigue la descarga en orden (cuando el reproductor salta). Sigue hasta el final y después completa lo de antes. No se guarda. |
+
+En Tablero:
+- Menú del torrent → **Descargar en orden**.
+- Pestaña Archivos: el botón ▶ (o mantener presionado → **Reproducir mientras se descarga**) en videos y audio.
+  Abre `http://127.0.0.1:8090/stream/<hash>/<n>/<nombre>` en el reproductor que elijas (VLC, MX Player…).
+  Tablero activa la descarga en orden, entrega solo los bytes de piezas ya completas (con `Range`) y espera
+  la siguiente. Si adelantas el video, la descarga sigue desde ese punto.
+- Con un rtorrent sin el parche (escritorio), Tablero oculta estas opciones.
+
+## Carpetas elegidas con el selector de Android
+
+Junto a **Examinar…**, el botón **Elegir con Android…** abre el selector de carpetas del sistema. La app traduce
+la carpeta a su ruta real (`primary:Movies` → `/storage/emulated/0/Movies`, una tarjeta SD → `/storage/<id>/…`)
+y la pone en el campo. Para eso hace falta "Acceso a todos los archivos". Si la carpeta no se puede escribir, Tablero
+lo dice. Eso pasa en una tarjeta SD, donde Android solo deja escribir en `Android/data/cl.tablero.android`. No se copia nada:
+rtorrent escribe directamente ahí.
 - `applicationId` = `cl.tablero.android`; se cambia en `android/tablero/build.gradle.kts`.
 
 ## Identidad ante trackers y pares
@@ -108,7 +136,7 @@ Las descargas van a `/sdcard/Android/data/io.github.ligutrino.rtorrent.demo/file
 docker build --target hosttest .
 ```
 
-Compila rtorrent para Linux con las mismas recetas y ejecuta `tools/host-test`, más `tools/tablero-test.sh` (recorre la API de Tablero contra ese rtorrent),, que usa el código
+Compila rtorrent para Linux con las mismas recetas y ejecuta `tools/host-test`, `tools/tablero-test.sh` (la API de Tablero) y `tools/sequential-test.py` (descarga en orden y /stream con dos rtorrent). `tools/host-test` usa el código
 Kotlin real del motor (sin la parte Android). La prueba arranca el daemon, añade un magnet y un .torrent,
 verifica datos, pausa, reanuda, aplica límites, quita y borra archivos, adopta un daemon ya vivo, lo
 para y comprueba que la sesión se restaura. Fuera de Docker: `tools/host-test.sh`.
@@ -120,7 +148,7 @@ para y comprueba que la sesión se restaura. Fuera de Docker: `tools/host-test.s
 | `native/sources.lock` | Versiones, sha256 y URLs de openssl 3.5.5, curl 8.23.0, libtorrent y rtorrent 0.16.17 |
 | `native/fetch.sh` | Descarga y verifica las fuentes (usa `native/downloads/` si ya están ahí) |
 | `native/build.sh <abi>…` | Compilación cruzada con el NDK. Deja `native/out/<abi>/librtorrent.so` |
-| `native/patches/<paquete>/*.patch` | Parches que se aplican al desempaquetar (ahora no hay ninguno) |
+| `native/patches/<paquete>/*.patch` | Parches que se aplican al desempaquetar: descarga en orden (`d.sequential`) |
 | `android/engine` | Módulo library Kotlin: API neutral, cliente XML-RPC, daemon y servicio |
 | `android/tablero` | App con Tablero (WebView + Chaquopy + puente) |
 | `android/app` | App mínima de prueba |
@@ -180,11 +208,11 @@ es bloqueante y no usa corrutinas, se usa bien desde Java y RxJava (`Single.from
   correr 6 h de cada 24. Google Play revisa la justificación de `specialUse`; para F-Droid o instalación
   directa no hay problema. El servicio debe arrancarse con la app visible (restricción de Android 12+).
 - **Almacenamiento**: rtorrent necesita rutas de archivo reales; no entiende URIs SAF (`content://`).
-  Por defecto descarga en el directorio externo propio de la app. Llevar archivos a Descargas o a una
-  carpeta elegida por el usuario requiere copiarlos (MediaStore/SAF) al terminar; eso no está hecho.
+  Con "Acceso a todos los archivos", el selector de Android se traduce a la ruta real. Sin ese permiso, o en una
+  tarjeta SD, solo sirve la carpeta propia de la app (copiar al terminar no está hecho).
 - **Si Android mata la app, también mata a rtorrent** (mismo grupo de procesos). La sesión se guarda
   cada 5 minutos y al parar. Al volver, `start()` adopta un daemon que siga vivo o lanza uno nuevo.
-- rtorrent no tiene descarga secuencial, prioridad por pieza para streaming, BitTorrent v2 ni uTP.
+- rtorrent no tiene BitTorrent v2 (los híbridos se abren como v1) ni uTP. La descarga en orden la agrega el parche de arriba.
 - Licencias: rtorrent y libtorrent son GPL-2.0-or-later, curl es MIT/curl y OpenSSL 3 es Apache-2.0.
   El APK resultante debe distribuirse bajo GPL con sus fuentes.
 

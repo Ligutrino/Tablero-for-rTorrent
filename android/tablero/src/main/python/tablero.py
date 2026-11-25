@@ -20,6 +20,7 @@ import hashlib
 import hmac
 import re
 import json
+import mimetypes
 import os
 import random
 import secrets
@@ -470,6 +471,7 @@ class RTorrentBackend:
         self.incoming = {"count": 0, "seen": 0, "checked": 0}
         self.last_pos = 0
         self.migrated = False
+        self._seq = None  # (rTorrent has d.sequential, when it was asked)
 
     def migrate_old_keys(self):
         """Mosaico (until 0.8) kept tags, options and position under other names, and named
@@ -523,10 +525,15 @@ class RTorrentBackend:
                     self.migrate_old_keys()
                     self.migrated = True
         fields = [f for _, f in TORRENT_FIELDS]
+        seq = self.sequential_supported()
+        if seq:
+            fields.append("d.sequential=")
         rows = self.rt.call("d.multicall2", "", "main", *fields)
         out = []
         for row in rows:
             t = dict(zip([k for k, _ in TORRENT_FIELDS], row))
+            # None: this rTorrent can't download in order (only rtorrent-android's has d.sequential).
+            t["sequential"] = row[-1] if seq else None
             t["tags"] = self._tags_of(t.pop("label"), t["tags"])
             t["opts"] = parse_opts(t["opts"])
             t["status"] = status_of(t)
@@ -816,6 +823,8 @@ class RTorrentBackend:
             calls = [c for h in hashes for c in (("d.message.set", [h, ""]), ("d.check_hash", [h]))]
         elif action == "priority":
             calls = [("d.priority.set", [h, int(kw["value"])]) for h in hashes]
+        elif action == "sequential":
+            calls = [("d.sequential.set", [h, 1 if kw["value"] else 0]) for h in hashes]
         elif action == "remove":
             paths, folders = [], []
             if kw.get("data"):
@@ -880,6 +889,43 @@ class RTorrentBackend:
         calls = [("f.priority.set", ["%s:f%d" % (h, i), int(prio)]) for i in indexes]
         calls.append(("d.update_priorities", [h]))
         return self.rt.multicall(calls)
+
+    # ---- in-order download and streaming (rtorrent-android: d.sequential, d.sequential_from)
+
+    def sequential_supported(self):
+        """Whether this rTorrent has d.sequential (asked again every minute)."""
+        now = time.monotonic()
+        if self._seq is None or now - self._seq[1] > 60:
+            try:
+                ok = "d.sequential.set" in self.rt.call("system.listMethods")
+            except (OSError, xmlrpc.client.Fault):
+                ok = False
+            self._seq = (ok, now)
+        return self._seq[0]
+
+    def stream_open(self, h, idx):
+        """A file to play while it downloads: turns on the in-order download, and the file
+        if it was off. Returns where it is and how it maps to the torrent's pieces."""
+        if not self.sequential_supported():
+            raise LookupError("Este rTorrent no puede descargar en orden (falta d.sequential)")
+        files = self.rt.call("f.multicall", h, "", "f.path=", "f.size_bytes=", "f.offset=", "f.priority=")
+        if not 0 <= idx < len(files):
+            raise LookupError("El torrent no tiene el archivo %d" % idx)
+        path, size, offset, prio = files[idx]
+        directory, chunk, chunks = self.rt.multicall([("d.directory", [h]), ("d.chunk_size", [h]), ("d.size_chunks", [h])])
+        calls = [("d.sequential.set", [h, 1])]
+        if prio == 0:
+            calls += [("f.priority.set", ["%s:f%d" % (h, idx), 1]), ("d.update_priorities", [h])]
+        self.rt.multicall(calls)
+        return {"path": os.path.join(directory, path), "size": size, "offset": offset,
+                "chunk": chunk, "chunks": chunks, "name": os.path.basename(path)}
+
+    def completed_pieces(self, h):
+        return bytes.fromhex(self.rt.call("d.bitfield", h) or "")
+
+    def stream_from(self, h, piece):
+        """The player wants piece: the in-order download goes on from there."""
+        self.rt.call("d.sequential_from.set", h, piece)
 
     def add(self, magnet=None, data=None, directory="", tags=(), start=True, skip=()):
         dup = self.duplicate(magnet, data)
@@ -2010,6 +2056,8 @@ class DemoBackend:
                     t["active"] = 0
                 elif action == "priority":
                     t["priority"] = int(kw["value"])
+                elif action == "sequential":
+                    t["sequential"] = 1 if kw["value"] else 0
                 elif action == "recheck" and not t["hashing"]:
                     t["hashing"], t["hash_checking"] = 3, 0
             if action == "recheck":
@@ -2815,6 +2863,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_HEAD(self):
         if self._authorized():
+            m = re.fullmatch(r"/stream/([0-9A-Fa-f]{40})/(\d+)(?:/[^/]*)?", urllib.parse.urlsplit(self.path).path)
+            if m:
+                return self._stream(m.group(1).upper(), int(m.group(2)))
             super().do_HEAD()
 
     def do_GET(self):
@@ -2853,7 +2904,92 @@ class Handler(SimpleHTTPRequestHandler):
         m = re.fullmatch(r"/logos/([0-9a-f]{16}\.(png|jpg|gif|webp))", url.path)
         if m:
             return self._logo(m.group(1), m.group(2))
+        m = re.fullmatch(r"/stream/([0-9A-Fa-f]{40})/(\d+)(?:/[^/]*)?", url.path)
+        if m:
+            return self._stream(m.group(1).upper(), int(m.group(2)))
         return super().do_GET()
+
+    STREAM_WAIT = 120     # seconds without a new piece before giving up on a player
+    STREAM_BLOCK = 256 * 1024
+
+    def _stream(self, h, idx):
+        """Plays a file while it downloads (Reproducir): HTTP with Range for any player,
+        that only sends bytes of complete pieces and waits for the next one. Where the
+        player asks (or seeks) is where the in-order download goes on."""
+        b = self.backend
+        if not hasattr(b, "stream_open"):
+            return self._json({"error": "Reproducir no está disponible en el modo demo"}, 404)
+        try:
+            info = b.stream_open(h, idx)
+        except LookupError as e:
+            return self._json({"error": str(e)}, 404)
+        except (OSError, xmlrpc.client.Fault) as e:
+            return self._json({"error": "rTorrent: %s" % e}, 502)
+        size, chunk, base = info["size"], info["chunk"], info["offset"]
+        start, end, partial = 0, size - 1, False
+        m = re.fullmatch(r"bytes=(\d*)-(\d*)", (self.headers.get("Range") or "").strip())
+        if m and (m.group(1) or m.group(2)):
+            partial = True
+            if m.group(1):
+                start = int(m.group(1))
+                end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+            else:  # the last N bytes
+                start = max(0, size - int(m.group(2)))
+            if start >= size or start > end:
+                self.send_response(416)
+                self.send_header("Content-Range", "bytes */%d" % size)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+        self.send_response(206 if partial else 200)
+        self.send_header("Content-Type", mimetypes.guess_type(info["name"])[0] or "application/octet-stream")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        if partial:
+            self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, size))
+        self.end_headers()
+        if self.command == "HEAD" or size == 0:
+            return
+        pos, asked, idle, f = start, None, 0.0, None
+        try:
+            while pos <= end:
+                try:
+                    have = b.completed_pieces(h)
+                except (OSError, xmlrpc.client.Fault):
+                    have = b""
+                piece = (base + pos) // chunk
+                c = piece
+                while c < info["chunks"] and c // 8 < len(have) and have[c // 8] & (0x80 >> (c % 8)) \
+                        and c * chunk - base <= end:
+                    c += 1
+                ready = min(end + 1, c * chunk - base)  # bytes [pos, ready) are in complete pieces
+                if ready <= pos or f is None and not os.path.isfile(info["path"]):
+                    if asked != piece:
+                        asked = piece
+                        try:
+                            b.stream_from(h, piece)
+                        except (OSError, xmlrpc.client.Fault):
+                            pass
+                    if idle >= self.STREAM_WAIT:
+                        return
+                    time.sleep(0.5)
+                    idle += 0.5
+                    continue
+                idle = 0.0
+                if f is None:
+                    f = open(info["path"], "rb")
+                f.seek(pos)
+                while pos < ready:
+                    data = f.read(min(self.STREAM_BLOCK, ready - pos))
+                    if not data:
+                        return
+                    self.wfile.write(data)
+                    pos += len(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the player closed it (seeking opens another request)
+        finally:
+            if f:
+                f.close()
 
     def _set_general(self, body):
         old = general_peers(self.backend.general.get())

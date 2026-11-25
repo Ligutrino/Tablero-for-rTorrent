@@ -1,0 +1,74 @@
+diff -ru ra/rtorrent-0.16.17/src/command_download.cc rb/rtorrent-0.16.17/src/command_download.cc
+--- a/src/command_download.cc	2026-07-06 12:06:52.000000000 +0000
++++ b/src/command_download.cc	2026-11-25 00:38:19.838348831 +0000
+@@ -886,6 +886,13 @@
+   CMD2_DL         ("d.priority_str", std::bind(&retrieve_d_priority_str, std::placeholders::_1));
+   CMD2_DL_VALUE_V ("d.priority.set", std::bind(&core::Download::set_priority, std::placeholders::_1, std::placeholders::_2));
+ 
++  // rtorrent-android: 1 = download chunks in order from the start (streaming), 0 = normal.
++  CMD2_DL         ("d.sequential",     std::bind(&core::Download::sequential, std::placeholders::_1));
++  CMD2_DL_VALUE_V ("d.sequential.set", std::bind(&core::Download::set_sequential, std::placeholders::_1, std::placeholders::_2));
++  // Chunk where the in-order search starts (a player seeking); not kept in the session.
++  CMD2_DL         ("d.sequential_from",     std::bind(&torrent::Download::sequential_start, CMD2_BIND_DL));
++  CMD2_DL_VALUE_V ("d.sequential_from.set", std::bind(&torrent::Download::set_sequential_start, CMD2_BIND_DL, std::placeholders::_2));
++
+   // CMD2_DL         ("d.group",     std::bind(&torrent::resource_manager_entry::group,
+   //                                           std::bind(&torrent::ResourceManager::entry_at, torrent::resource_manager(),
+   //                                                     std::bind(&core::Download::main, std::placeholders::_1))));
+@@ -984,6 +991,8 @@
+   rpc::rpc.mark_safe("d.chunk_size");
+   rpc::rpc.mark_safe("d.priority");
+   rpc::rpc.mark_safe("d.priority_str");
++  rpc::rpc.mark_safe("d.sequential");
++  rpc::rpc.mark_safe("d.sequential_from");
+   rpc::rpc.mark_safe("d.state");
+   rpc::rpc.mark_safe("d.state_changed");
+   rpc::rpc.mark_safe("d.state_counter");
+diff -ru ra/rtorrent-0.16.17/src/core/download.cc rb/rtorrent-0.16.17/src/core/download.cc
+--- a/src/core/download.cc	2026-07-06 12:06:52.000000000 +0000
++++ b/src/core/download.cc	2026-11-25 00:33:32.764467735 +0000
+@@ -32,6 +32,17 @@
+   m_download = download_type();
+ }
+ 
++int64_t
++Download::sequential() {
++  return m_download.is_sequential() ? 1 : 0;
++}
++
++void
++Download::set_sequential(int64_t v) {
++  m_download.set_sequential(v != 0);
++  bencode()->get_key("rtorrent").insert_key("sequential", (int64_t)(v != 0));
++}
++
+ uint32_t
+ Download::priority() {
+   return bencode()->get_key("rtorrent").get_key_value("priority");
+diff -ru ra/rtorrent-0.16.17/src/core/download.h rb/rtorrent-0.16.17/src/core/download.h
+--- a/src/core/download.h	2026-07-06 12:06:52.000000000 +0000
++++ b/src/core/download.h	2026-11-25 00:33:32.764361543 +0000
+@@ -75,6 +75,10 @@
+   uint32_t            priority();
+   void                set_priority(uint32_t p);
+ 
++  // rtorrent-android: in-order download, kept in the session ("rtorrent" → "sequential").
++  int64_t             sequential();
++  void                set_sequential(int64_t v);
++
+   uint32_t            resume_flags()                           { return m_resumeFlags; }
+   void                set_resume_flags(uint32_t flags)         { m_resumeFlags = flags; }
+ 
+diff -ru ra/rtorrent-0.16.17/src/core/download_factory.cc rb/rtorrent-0.16.17/src/core/download_factory.cc
+--- a/src/core/download_factory.cc	2026-07-06 12:06:52.000000000 +0000
++++ b/src/core/download_factory.cc	2026-11-25 00:33:32.764743675 +0000
+@@ -386,6 +386,9 @@
+   else
+     rpc::call_command("d.priority.set", (int64_t)2, rpc::make_target(download));
+ 
++  if (rtorrent->has_key_value("sequential") && rtorrent->get_key_value("sequential") != 0)
++    rpc::call_command("d.sequential.set", (int64_t)1, rpc::make_target(download));
++
+   if (rtorrent->has_key_value("total_uploaded"))
+     download->info()->mutable_up_rate()->set_total(rtorrent->get_key_value("total_uploaded"));
+ 

@@ -28,7 +28,8 @@ const cmdHTML = (text) => `<span class="cmd"><code>${esc(text)}</code>${toolBtn(
 // ------------------------------------------------------------ android
 // tablero.py --android: no systemctl, apt, ufw or file manager to start. The Android app
 // can give window.TableroAndroid (addJavascriptInterface) with any of: openFolder(path),
-// startRtorrent(), restartRtorrent(); what it lacks is hidden or explained in words.
+// startRtorrent(), restartRtorrent(), openStream(url, name), pickFolder(id); what it lacks is hidden or
+// explained in words.
 const isAndroid = () => state.platform === "android";
 const androidCan = (fn) => typeof window.TableroAndroid?.[fn] === "function";
 const canOpenFolder = () => !isAndroid() || androidCan("openFolder");
@@ -819,6 +820,24 @@ function fileTree(files) {
 	return root;
 }
 
+// ------------------------------------------------------------ play while downloading
+// Only rtorrent-android's rTorrent has d.sequential (t.sequential is null elsewhere).
+const MEDIA_EXT = /\.(mp4|m4v|mkv|webm|avi|mov|wmv|flv|ts|m2ts|mpg|mpeg|3gp|mp3|m4a|aac|flac|ogg|oga|opus|wav|wma)$/i;
+const canStream = (h) => state.byHash.get(h)?.sequential != null;
+const playBtn = (i, path) => canStream(detailHash()) && MEDIA_EXT.test(path)
+	? `<button type="button" class="play-btn" data-play="${i}" title="Reproducir mientras se descarga">${iconHTML("lucide:play")}</button>` : "";
+
+function playFile(h, i) {
+	const f = state.details?.files?.[i];
+	if (!f) return;
+	const name = f.path.split("/").pop();
+	const url = `${location.origin}/stream/${h}/${i}/${encodeURIComponent(name)}`;
+	if (androidCan("openStream")) window.TableroAndroid.openStream(url, name);
+	else window.open(url, "_blank", "noopener");
+	toast("Descarga en orden activada: el reproductor espera las piezas que falten");
+	setTimeout(refresh, 1500);
+}
+
 function filesHTML(files) {
 	const skipped = files.filter((f) => f.priority === 0).length;
 	const tools = tableTools("files", `
@@ -844,7 +863,7 @@ function filesHTML(files) {
 				if (open) walk(d, depth + 1);
 			}
 			for (const f of order(node.files.filter((f) => shown.has(f.i))))
-				rowsHTML += `<tr class="${f.priority === 0 ? "skipped" : ""}" data-file="${f.i}"><td class="path" style="padding-left:${26 + depth * 18}px">${esc(f.name)}</td><td class="num">${size(f.size)}</td>` +
+				rowsHTML += `<tr class="${f.priority === 0 ? "skipped" : ""}" data-file="${f.i}"><td class="path" style="padding-left:${26 + depth * 18}px">${playBtn(f.i, f.path)}${esc(f.name)}</td><td class="num">${size(f.size)}</td>` +
 					`<td>${fileBar(f.progress)}</td><td>${prioSelect(`data-files="${f.i}"`, f.priority)}</td></tr>`;
 		};
 		walk(fileTree(files), 0);
@@ -852,7 +871,7 @@ function filesHTML(files) {
 		const list = files.map((f, i) => ({ ...f, i })).filter((f) => !(prefs.hideSkipped && f.priority === 0) && match(f));
 		(fcol ? list.sort((a, b) => tcmp(fcol.get(a), fcol.get(b)) * fs.dir) : list).forEach((f) => {
 			const i = f.i;
-			rowsHTML += `<tr class="${f.priority === 0 ? "skipped" : ""}" data-file="${i}"><td class="path">${esc(f.path)}</td><td class="num">${size(f.size)}</td>` +
+			rowsHTML += `<tr class="${f.priority === 0 ? "skipped" : ""}" data-file="${i}"><td class="path">${playBtn(i, f.path)}${esc(f.path)}</td><td class="num">${size(f.size)}</td>` +
 				`<td>${fileBar(f.progress)}</td><td>${prioSelect(`data-files="${i}"`, f.priority)}</td></tr>`;
 		});
 	}
@@ -1470,6 +1489,11 @@ function rowMenu(e) {
 		{ label: "Al final", k: "Ctrl+Fin", run: () => movePos("bottom") },
 		"-",
 		...(canOpenFolder() ? [{ label: hs.length > 1 ? "Abrir carpetas" : "Abrir carpeta", run: () => hs.slice(0, 5).forEach((h) => openFolder(h)) }] : []),
+		...(ts.every((t) => t.sequential != null) ? [{
+			label: "Descargar en orden", chk: ts.every((t) => t.sequential),
+			run: () => act("/api/action", { action: "sequential", hashes: hs, value: ts.every((t) => t.sequential) ? 0 : 1 },
+				ts.every((t) => t.sequential) ? "Descarga normal (por rareza)" : "Descarga en orden: desde el principio, para ver o escuchar mientras baja"),
+		}] : []),
 		{ label: "Reubicar datos…", run: relocateDialog },
 		{ label: "Renombrar carpeta…", disabled: ts.length !== 1 || ts[0].files < 2, run: renameFolderDialog },
 		{ label: "Verificar datos", run: () => act("/api/action", { action: "recheck", hashes: hs }, "Verificación iniciada: se revisa cada pieza contra el .torrent") },
@@ -2178,8 +2202,20 @@ function addTrackerDialog(t) {
 // A folder field with a browser of the folders on the computer running Tablero.
 function folderPicker(id, value) {
 	return `<div class="fp"><div class="row"><input type="text" id="${id}" value="${esc(value || "")}" placeholder="${isAndroid() ? "/storage/emulated/0/Download/Torrents" : "/ruta/a/la/carpeta"}" style="flex:1">` +
-		`<button type="button" class="btn" data-fp-browse="${id}">Examinar…</button></div><div class="fp-panel" data-fp-for="${id}" hidden></div></div>`;
+		`<button type="button" class="btn" data-fp-browse="${id}">Examinar…</button>` +
+		(androidCan("pickFolder") ? `<button type="button" class="btn" data-fp-saf="${id}" title="El selector de carpetas de Android">Elegir con Android…</button>` : "") +
+		`</div><div class="fp-panel" data-fp-for="${id}" hidden></div></div>`;
 }
+// Android's folder picker (TableroAndroid.pickFolder): the app turns the folder into its real path
+// and answers with window.tableroFolderPicked(id, path, error).
+const safWaiting = new Map();
+let safSeq = 0;
+window.tableroFolderPicked = (id, path, err) => {
+	const input = safWaiting.get(id);
+	safWaiting.delete(id);
+	if (err) return toast(err, true);
+	if (input && path) setPath(input, path);
+};
 // Puts a path in the field scrolled to its end, where the folder's own name is.
 function setPath(input, path) {
 	input.value = path;
@@ -2206,6 +2242,12 @@ async function browseFolder(panel, path) {
 }
 function wireFolderPickers(m) {
 	m.addEventListener("click", (e) => {
+		const saf = e.target.closest("[data-fp-saf]");
+		if (saf) {
+			const id = String(++safSeq);
+			safWaiting.set(id, $("#" + saf.dataset.fpSaf, m));
+			return window.TableroAndroid.pickFolder(id);
+		}
 		const b = e.target.closest("[data-fp-browse]");
 		if (b) {
 			const panel = $(`[data-fp-for="${b.dataset.fpBrowse}"]`, m);
@@ -3081,7 +3123,10 @@ function wire() {
 		if (!tr || !h) return;
 		e.preventDefault();
 		const run = tr.dataset.dirpath !== undefined ? () => openFolder(h, undefined, tr.dataset.dirpath) : () => openFolder(h, +tr.dataset.file);
-		if (canOpenFolder()) openMenu(e.clientX, e.clientY, [{ label: "Mostrar en la carpeta", run }]);
+		const items = canOpenFolder() ? [{ label: "Mostrar en la carpeta", run }] : [];
+		if (tr.dataset.file !== undefined && canStream(h))
+			items.push({ label: "Reproducir mientras se descarga", run: () => playFile(h, +tr.dataset.file) });
+		if (items.length) openMenu(e.clientX, e.clientY, items);
 	});
 	$("#details-body").addEventListener("submit", (e) => {
 		e.preventDefault();
@@ -3089,6 +3134,8 @@ function wire() {
 		if (t && e.target.id === "opt-form") saveOptions(t);
 	});
 	document.addEventListener("click", (e) => {
+		const pb = e.target.closest("[data-play]");
+		if (pb && detailHash()) { e.preventDefault(); e.stopPropagation(); return playFile(detailHash(), +pb.dataset.play); }
 		const ac = e.target.closest("[data-android-call]");
 		if (ac && androidCan(ac.dataset.androidCall)) {
 			window.TableroAndroid[ac.dataset.androidCall]();

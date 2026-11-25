@@ -2,8 +2,10 @@ package cl.tablero.ui
 
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.provider.DocumentsContract
 import android.webkit.JavascriptInterface
+import android.webkit.MimeTypeMap
 import android.widget.Toast
 import io.github.ligutrino.rtorrent.engine.android.EngineProvider
 
@@ -14,6 +16,8 @@ class TableroPuente(
     private val act: Activity,
     /** "Exportar el elegido…" de los respaldos: el "Guardar como" de Android con ese .zip. */
     private val exportar: (String) -> Unit,
+    /** "Elegir con Android…": selector de carpetas; la respuesta va a window.tableroFolderPicked(id, …). */
+    private val elegirCarpeta: (String) -> Unit,
 ) {
 
     @JavascriptInterface
@@ -50,4 +54,24 @@ class TableroPuente(
     /** ⚙ Opciones → Respaldo → "Exportar el elegido…": path es el .zip del respaldo. */
     @JavascriptInterface
     fun exportFile(path: String) = act.runOnUiThread { exportar(path) }
+
+    /** "Elegir con Android…" junto a Examinar…: abre el selector de carpetas del sistema. */
+    @JavascriptInterface
+    fun pickFolder(id: String) = act.runOnUiThread { elegirCarpeta(id) }
+
+    /**
+     * "Reproducir mientras se descarga": url es http://127.0.0.1:8090/stream/… (Tablero entrega solo
+     * las piezas completas). Se abre en el reproductor que elija el usuario (VLC, MX Player…).
+     */
+    @JavascriptInterface
+    fun openStream(url: String, name: String) = act.runOnUiThread {
+        val ext = name.substringAfterLast('.', "").lowercase()
+        val tipo = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "video/*"
+        val i = Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(url), tipo).putExtra(Intent.EXTRA_TITLE, name)
+        try {
+            act.startActivity(Intent.createChooser(i, "Reproducir con"))
+        } catch (e: Exception) {
+            Toast.makeText(act, "No hay un reproductor instalado", Toast.LENGTH_LONG).show()
+        }
+    }
 }

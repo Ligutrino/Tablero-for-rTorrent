@@ -1,0 +1,160 @@
+diff -ru a/libtorrent-0.16.17/src/download/chunk_selector.cc b/libtorrent-0.16.17/src/download/chunk_selector.cc
+--- a/src/download/chunk_selector.cc	2026-07-06 12:06:40.000000000 +0000
++++ b/src/download/chunk_selector.cc	2026-11-25 00:38:19.837467835 +0000
+@@ -65,8 +65,8 @@
+ 
+   // Randomize position on average every 16 chunks to prevent
+   // inefficient distribution with a slow seed and fast peers
+-  // all arriving at the same position.
+-  if ((random() & 63) == 0) {
++  // all arriving at the same position. Not in sequential mode.
++  if (!m_sequential && (random() & 63) == 0) {
+     m_position = random() % size();
+     queue->clear();
+   }
+@@ -91,8 +91,12 @@
+ 
+   queue->clear();
+ 
+-  (search_linear(pc->bitfield(), queue, m_data->high_priority(), m_position, size()) &&
+-   search_linear(pc->bitfield(), queue, m_data->high_priority(), 0, m_position));
++  // Sequential: from the start position (0 unless a player seeked), so the queue holds
++  // the next indices in order; then, if there is room, from 0.
++  uint32_t start = m_sequential ? std::min(m_sequential_start, size() - 1) : m_position;
++
++  (search_linear(pc->bitfield(), queue, m_data->high_priority(), start, size()) &&
++   (start == 0 || search_linear(pc->bitfield(), queue, m_data->high_priority(), 0, start)));
+ 
+   if (queue->prepare_pop()) {
+     // Set that the peer has high priority pieces cached.
+@@ -103,8 +107,8 @@
+     // Urgh...
+     queue->clear();
+ 
+-    (search_linear(pc->bitfield(), queue, m_data->normal_priority(), m_position, size()) &&
+-     search_linear(pc->bitfield(), queue, m_data->normal_priority(), 0, m_position));
++    (search_linear(pc->bitfield(), queue, m_data->normal_priority(), start, size()) &&
++     (start == 0 || search_linear(pc->bitfield(), queue, m_data->normal_priority(), 0, start)));
+ 
+     if (!queue->prepare_pop())
+       return invalid_chunk;
+@@ -118,6 +122,24 @@
+   return pos;
+ }
+ 
++void
++ChunkSelector::set_sequential(bool s) {
++  if (s == m_sequential)
++    return;
++
++  m_sequential = s;
++  m_sharedQueue.clear();
++}
++
++void
++ChunkSelector::set_sequential_start(uint32_t index) {
++  if (index == m_sequential_start)
++    return;
++
++  m_sequential_start = index;
++  m_sharedQueue.clear();
++}
++
+ bool
+ ChunkSelector::is_wanted(uint32_t index) const {
+   return m_data->untouched_bitfield()->get(index) && (m_data->normal_priority()->has(index) || m_data->high_priority()->has(index));
+@@ -171,7 +193,8 @@
+   if (!m_data->high_priority()->has(index) && !m_data->normal_priority()->has(index))
+     return false;
+ 
+-  if (pc->download_cache()->is_enabled())
++  // Sequential: the cache is in index order; a new piece far ahead must not jump the queue.
++  if (pc->download_cache()->is_enabled() && !m_sequential)
+     pc->download_cache()->insert(m_statistics->rarity(index), index);
+ 
+   return true;
+@@ -228,7 +251,8 @@
+     if (!(wanted & Bitfield::mask_at(i)))
+       continue;
+ 
+-    if (!pq->insert(m_statistics->rarity(index + i), index + i) && pq->is_full())
++    // Sequential: same key for all, so the queue keeps them in index order.
++    if (!pq->insert(m_sequential ? 0 : m_statistics->rarity(index + i), index + i) && pq->is_full())
+       return false;
+   }
+ 
+diff -ru a/libtorrent-0.16.17/src/download/chunk_selector.h b/libtorrent-0.16.17/src/download/chunk_selector.h
+--- a/src/download/chunk_selector.h	2026-07-06 12:06:40.000000000 +0000
++++ b/src/download/chunk_selector.h	2026-11-25 00:38:19.836909498 +0000
+@@ -49,6 +49,15 @@
+ 
+   bool                is_wanted(uint32_t index) const;
+ 
++  // Sequential mode (rtorrent-android): pick the lowest wanted chunk the peer has, from the
++  // start of the torrent, instead of a random, moving position ordered by rarity.
++  bool                is_sequential() const         { return m_sequential; }
++  void                set_sequential(bool s);
++
++  // Where the sequential search starts (a player seeking into the middle); it wraps to 0.
++  uint32_t            sequential_start() const      { return m_sequential_start; }
++  void                set_sequential_start(uint32_t index);
++
+   // Call this to set the index as being downloaded, finished etc,
+   // thus ignored. Propably should find a better name for this.
+   void                using_index(uint32_t index);
+@@ -82,6 +91,9 @@
+   utils::PartialQueue m_sharedQueue;
+ 
+   uint32_t            m_position;
++
++  bool                m_sequential{false};
++  uint32_t            m_sequential_start{0};
+ };
+ 
+ } // namespace torrent
+diff -ru a/libtorrent-0.16.17/src/torrent/download.cc b/libtorrent-0.16.17/src/torrent/download.cc
+--- a/src/torrent/download.cc	2026-07-06 12:06:40.000000000 +0000
++++ b/src/torrent/download.cc	2026-11-25 00:38:19.837978507 +0000
+@@ -211,6 +211,26 @@
+     m_ptr->info()->unset_flags(DownloadInfo::flag_pex_enabled);
+ }
+ 
++bool
++Download::is_sequential() const {
++  return m_ptr->main()->chunk_selector()->is_sequential();
++}
++
++void
++Download::set_sequential(bool enabled) {
++  m_ptr->main()->chunk_selector()->set_sequential(enabled);
++}
++
++uint32_t
++Download::sequential_start() const {
++  return m_ptr->main()->chunk_selector()->sequential_start();
++}
++
++void
++Download::set_sequential_start(uint32_t index) {
++  m_ptr->main()->chunk_selector()->set_sequential_start(index);
++}
++
+ Object*
+ Download::bencode() {
+   return m_ptr->bencode();
+diff -ru a/libtorrent-0.16.17/src/torrent/download.h b/libtorrent-0.16.17/src/torrent/download.h
+--- a/src/torrent/download.h	2026-07-06 12:06:40.000000000 +0000
++++ b/src/torrent/download.h	2026-11-25 00:38:19.837742577 +0000
+@@ -65,6 +65,12 @@
+ 
+   void                set_pex_enabled(bool enabled);
+ 
++  // rtorrent-android: download chunks in order, from the start (for streaming).
++  bool                is_sequential() const;
++  void                set_sequential(bool enabled);
++  uint32_t            sequential_start() const;
++  void                set_sequential_start(uint32_t index);
++
+   Object*             bencode();
+   const Object*       bencode() const;
+ 
