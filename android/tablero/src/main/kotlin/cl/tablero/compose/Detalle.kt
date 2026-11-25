@@ -110,7 +110,7 @@ val TABS = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BarraDetalle(estado: Estado, t: Torrent, menu: @Composable () -> Unit) {
+fun BarraDetalle(estado: Estado, t: Torrent) {
     val c = LocalColores.current
     TopAppBar(colors = TopAppBarDefaults.topAppBarColors(containerColor = c.panel, titleContentColor = c.text,
         navigationIconContentColor = c.text, actionIconContentColor = c.text),
@@ -124,12 +124,6 @@ fun BarraDetalle(estado: Estado, t: Torrent, menu: @Composable () -> Unit) {
                     if (t.downRate > 0) Text("↓ " + Formato.rate(t.downRate), fontSize = 12.sp, color = c.down)
                     if (t.upRate > 0) Text("↑ " + Formato.rate(t.upRate), fontSize = 12.sp, color = c.up)
                 }
-            }
-        },
-        actions = {
-            Box {
-                IconButton(onClick = { estado.menu = "torrents" }) { Icono("ellipsis-vertical", size = 22.dp, desc = "Más") }
-                menu()
             }
         })
 }

@@ -1,5 +1,6 @@
 package cl.tablero.compose
 
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -78,11 +79,18 @@ fun TableroPantalla(estado: Estado) {
         }
         val det = estado.detalle?.let { estado.byHash[it] }
         ModalNavigationDrawer(drawerState = drawer, gesturesEnabled = det == null, drawerContent = {
-            ModalDrawerSheet(drawerContainerColor = c.panel, modifier = Modifier.width(300.dp)) { Filtros(estado) }
+            ModalDrawerSheet(drawerContainerColor = c.panel, modifier = Modifier.width(300.dp)) {
+                // Los filtros se desplazan; la versión queda fija abajo, siempre a la vista.
+                Box(Modifier.weight(1f)) { Filtros(estado) }
+                if (estado.version.isNotEmpty()) {
+                    HorizontalDivider(color = c.line)
+                    Text("Tablero ${estado.version}", fontSize = 11.sp, color = c.dim, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+                }
+            }
         }) {
             Scaffold(
                 containerColor = c.bg,
-                topBar = { if (det != null) BarraDetalle(estado, det) { MenuTorrents(estado) } else BarraSuperior(estado) },
+                topBar = { if (det != null) BarraDetalle(estado, det) else BarraSuperior(estado) },
                 bottomBar = {
                     // El gráfico de velocidad ocupa la mitad de abajo; el botón Agregar queda sobre él.
                     // Solo si hay algo: una barra vacía (alto 0) hace que el botón + ignore la barra de navegación del sistema.
@@ -115,6 +123,7 @@ fun TableroPantalla(estado: Estado) {
                 }
             }
         }
+        MenuTorrents(estado)
         DialogoActual(estado)
     }
 }
@@ -137,10 +146,6 @@ private fun BarraSuperior(estado: Estado) {
             }
         }, actions = {
             IconButton(onClick = { estado.sel = estado.rows().map { it.hash }.toSet() }) { Icono("list-checks", size = 22.dp, desc = "Elegir todos") }
-            Box {
-                IconButton(onClick = { estado.menu = "torrents" }) { Icono("ellipsis-vertical", size = 22.dp, desc = "Más") }
-                MenuTorrents(estado)
-            }
         })
         return
     }
@@ -276,21 +281,30 @@ private fun MenuOrden(estado: Estado) {
 }
 
 /** El menú de los torrents elegidos o del detalle abierto (rowMenu de la web). */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MenuTorrents(estado: Estado) {
     val c = LocalColores.current
     val clip = LocalClipboardManager.current
     val ts = estado.objetivo()
     val hs = ts.map { it.hash }
-    DropdownMenu(expanded = estado.menu == "torrents" && ts.isNotEmpty(), onDismissRequest = { estado.menu = null }, containerColor = c.panel2) {
-        // Como los demás menús: un ícono a la izquierda de cada opción; ✓ a la derecha en lo que está activo.
+    if (estado.menu != "torrents" || ts.isEmpty()) return
+    // Una hoja desde abajo (botón Más de la barra de acciones), con las mismas secciones que tenía el menú ⋮.
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = { estado.menu = null }, containerColor = c.panel2,
+        sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+      Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 8.dp)) {
+        Text(if (ts.size == 1) ts[0].name else "${ts.size} torrents", fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 2,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
         fun item(label: String, icon: String? = null, enabled: Boolean = true, check: Boolean? = null, run: () -> Unit) = @Composable {
-            DropdownMenuItem(text = { Text(label) }, enabled = enabled, leadingIcon = {
-                if (icon != null) Icono(icon, size = 16.dp) else Spacer(Modifier.size(16.dp))
-            }, trailingIcon = if (check == true) ({ Icono("check", size = 16.dp, tint = c.accent) }) else null,
-                onClick = { estado.menu = null; run() })
+            val tint = if (enabled) c.text else c.dim
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = enabled) { estado.menu = null; run() }.padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                if (icon != null) Icono(icon, size = 20.dp, tint = tint) else Spacer(Modifier.size(20.dp))
+                Text(label, fontSize = 15.sp, color = tint, modifier = Modifier.weight(1f))
+                if (check == true) Icono("check", size = 18.dp, tint = c.accent)
+            }
         }
-        @Composable fun head(t: String) = Text(t, fontSize = 12.sp, color = c.dim, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+        @Composable fun head(t: String) = Text(t, fontSize = 12.sp, color = c.dim, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp))
         fun copy(text: String) { clip.setText(AnnotatedString(text)); estado.aviso("Copiado") }
 
         // La prioridad no va aquí: se cambia por torrent en la pestaña Opciones.
@@ -322,6 +336,7 @@ fun MenuTorrents(estado: Estado) {
         item("Quitar todas las etiquetas", "tag", enabled = ts.any { it.tags.isNotEmpty() }) {
             estado.act("/api/set-tags", mapOf("hashes" to hs, "tags" to emptyList<String>()))
         }()
+      }
     }
 }
 
@@ -343,6 +358,7 @@ private fun BarraAcciones(estado: Estado) {
         accion("square", "Detener") { estado.act("/api/action", mapOf("action" to "stop", "hashes" to hs())) }
         accion("tag", "Etiquetas") { estado.dialogo = Dialogo.Etiquetas(hs()) }
         accion("trash-2", "Eliminar", c.bad) { estado.dialogo = Dialogo.Eliminar(hs()) }
+        accion("ellipsis-vertical", "Más") { estado.menu = "torrents" }
     }
 }
 

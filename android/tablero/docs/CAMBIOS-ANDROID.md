@@ -1,5 +1,11 @@
 # Cambios de la variante Android
 
+## 0.11-android.15-kotlin (25-11-2026, rama `kotlin`)
+
+- Sin el ⋮ de arriba (lista con selección y detalle): la barra de acciones de abajo suma "Más", que abre una hoja desde
+  abajo con Archivos, Posición en la cola, Copiar y Quitar todas las etiquetas. Sirve para uno o varios torrents.
+- La versión de Tablero queda fija al pie de la barra lateral (sale de Opciones).
+
 ## 0.11-android.14-kotlin (25-11-2026, rama `kotlin`)
 
 - Menú de los torrents: Descargar en orden pasa a Archivos (la sección Descarga desaparece).
