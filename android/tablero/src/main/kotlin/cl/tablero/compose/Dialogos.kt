@@ -209,6 +209,8 @@ fun EtiquetasDialogo(estado: Estado, hashes: List<String>) {
     }) {
         NombresTorrents(ts)
         SelectorEtiquetas(estado, marcas, nuevas)
+        if (marcas.values.any { it != ToggleableState.Off })
+            BotonHerr("x", "Quitar todas") { for (x in (estado.allTags() + nuevas).distinct()) marcas[x] = ToggleableState.Off }
         Hint("Un torrent puede tener varias etiquetas. La primera también se guarda como etiqueta de ruTorrent.")
     }
 }

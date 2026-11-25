@@ -21,7 +21,7 @@ import kotlin.concurrent.thread
 
 /** Las variables globales de tablero.py (PLATFORM, USER_FILES, RTORRENT_RC...). */
 object Tab {
-    const val VERSION = "0.11-android.17-kotlin"
+    const val VERSION = "0.11-android.18-kotlin"
     @Volatile var platform = "desktop"
     @Volatile var userFilesDir: String? = null
     @Volatile var rtorrentRc: String? = null
@@ -514,7 +514,7 @@ class Tablero(private val o: Options) {
                 val o = body()
                 val data = if (truthy(o["file"])) bytesOf(o["file"]) else if (truthy(o["path"])) readTorrentFile(asStr(o["path"])) else null
                 b.add(o["magnet"] as? String, data, o["directory"] as? String ?: "", asList(o["tags"] ?: emptyList<Any>()),
-                    if (o.containsKey("start")) truthy(o["start"]) else true, asList(o["skip"] ?: emptyList<Any>()))
+                    if (o.containsKey("start")) truthy(o["start"]) else true, asList(o["skip"] ?: emptyList<Any>()), truthy(o["sequential"]))
             },
             "/api/torrent-info" to {
                 val o = body()

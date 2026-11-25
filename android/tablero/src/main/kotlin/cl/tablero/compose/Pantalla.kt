@@ -301,13 +301,6 @@ fun MenuTorrents(estado: Estado) {
         fun copy(text: String) { clip.setText(AnnotatedString(text)); estado.aviso("Copiado") }
 
         head("Archivos")
-        if (ts.all { it.sequential != null }) {
-            val on = ts.all { it.sequential == true }
-            item("Descargar en orden", "list-ordered", check = on) {
-                estado.act("/api/action", mapOf("action" to "sequential", "hashes" to hs, "value" to if (on) 0 else 1),
-                    if (on) "Descarga normal (por rareza)" else "Descarga en orden: desde el principio, para ver o escuchar mientras baja")
-            }()
-        }
         if (ts.size == 1) item("Abrir carpeta", "folder-open") { estado.abrirCarpeta(ts[0].hash) }()
         item("Reubicar datos…", "folder") { estado.dialogo = Dialogo.Reubicar(hs) }()
         item("Renombrar carpeta…", "pencil", enabled = ts.size == 1 && ts[0].files >= 2) { estado.dialogo = Dialogo.RenombrarCarpeta(hs[0]) }()
@@ -322,15 +315,14 @@ fun MenuTorrents(estado: Estado) {
                 estado.act("/api/move", mapOf("hashes" to hs, "where" to w))
             }()
         }
-        HorizontalDivider(color = c.line)
-        head("Copiar")
-        item(if (ts.size > 1) "Nombres" else "Nombre", "copy") { copy(ts.joinToString("\n") { it.name }) }()
-        item("Hash", "copy") { copy(ts.joinToString("\n") { it.hash }) }()
-        item("Enlace magnet", "magnet") { copy(ts.joinToString("\n") { magnetOf(it) }) }()
-        HorizontalDivider(color = c.line)
-        item("Quitar todas las etiquetas", "tag", enabled = ts.any { it.tags.isNotEmpty() }) {
-            estado.act("/api/set-tags", mapOf("hashes" to hs, "tags" to emptyList<String>()))
-        }()
+        // Con un torrent abierto, copiar está en la pestaña Archivos (botón Copiar).
+        if (estado.detalle == null) {
+            HorizontalDivider(color = c.line)
+            head("Copiar")
+            item(if (ts.size > 1) "Nombres" else "Nombre", "copy") { copy(ts.joinToString("\n") { it.name }) }()
+            item("Hash", "copy") { copy(ts.joinToString("\n") { it.hash }) }()
+            item("Enlace magnet", "magnet") { copy(ts.joinToString("\n") { magnetOf(it) }) }()
+        }
     }
 }
 

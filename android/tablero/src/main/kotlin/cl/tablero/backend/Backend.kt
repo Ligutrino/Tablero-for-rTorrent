@@ -447,7 +447,7 @@ class Backend(connector: ScgiConnector) {
 
     fun streamFrom(h: String, piece: Long) { rt.call("d.sequential_from.set", h, piece) }
 
-    fun add(magnet: String?, data: ByteArray?, directory: String, tagsIn: List<Any?>, start: Boolean, skipIn: List<Any?>): Any? {
+    fun add(magnet: String?, data: ByteArray?, directory: String, tagsIn: List<Any?>, start: Boolean, skipIn: List<Any?>, sequential: Boolean = false): Any? {
         duplicate(magnet, data)?.let { return it }
         val skip = skipIn.map { pyInt(it) }.toSortedSet()
         val cmds = ArrayList<String>()
@@ -460,6 +460,8 @@ class Backend(connector: ScgiConnector) {
         }
         cmds.add("d.custom.set=addtime,%d".format(System.currentTimeMillis() / 1000))
         cmds.add("d.custom.set=%s,%d".format(POS_KEY, nextPos()))
+        // Descargar en orden desde el principio (solo el rTorrent de rtorrent-android tiene d.sequential).
+        if (sequential && sequentialSupported()) cmds.add("d.sequential.set=1")
         if (data != null && skip.isNotEmpty()) {
             // Con archivos fuera: se carga detenido, esos archivos en "No bajar" y después se inicia.
             val h = torrentFiles(data)["hash"] as String

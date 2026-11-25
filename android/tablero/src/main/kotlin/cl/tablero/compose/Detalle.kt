@@ -243,12 +243,10 @@ private fun General(estado: Estado, t: Torrent, d: Detalles?) {
                 }
             }
         }
-        Dato("Identificador") {
-            Column {
-                SelectionContainer { Text(t.hash, fontSize = 13.sp, fontFamily = FontFamily.Monospace) }
-                Hint("Huella única del torrent (info-hash), la misma en toda la red")
-            }
-        }
+        DatoCopiar(estado, "Nombre", t.name, "el nombre")
+        DatoCopiar(estado, "Hash", t.hash, "el hash", mono = true)
+        Hint("Huella única del torrent (info-hash), la misma en toda la red")
+        DatoCopiar(estado, "Magnet", magnetOf(t), "el enlace magnet", maxLines = 1)
         if (t.message.isNotEmpty()) Dato("Mensaje") {
             Column {
                 Text(messageText(t), fontSize = 14.sp)
@@ -459,6 +457,11 @@ private fun Archivos(estado: Estado, t: Torrent, d: Detalles) {
         item {
             Herramientas(estado, "files", FILE_COLS) {
                 Seg(listOf("tree" to "Árbol", "list" to "Lista"), if (p.filesTree) "tree" else "list") { v -> estado.updatePrefs { it.copy(filesTree = v == "tree") } }
+                if (t.sequential != null) BotonHerr("list-ordered", "Descargar en orden", on = t.sequential) {
+                    val on = t.sequential
+                    estado.act("/api/action", mapOf("action" to "sequential", "hashes" to listOf(t.hash), "value" to if (on) 0 else 1),
+                        if (on) "Descarga normal (por rareza)" else "Descarga en orden: desde el principio, para ver o escuchar mientras baja")
+                }
                 BotonHerr(if (p.hideSkipped) "eye" else "eye-off", (if (p.hideSkipped) "Mostrar" else "Ocultar") + " los que no se descargarán" + (if (skipped > 0) " ($skipped)" else ""),
                     on = p.hideSkipped) { estado.updatePrefs { it.copy(hideSkipped = !it.hideSkipped) } }
                 if (p.filesTree) {
@@ -1012,5 +1015,24 @@ private fun Opciones(estado: Estado, t: Torrent) {
                 }
             }, colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = Color.White)) { Text("Aplicar") }
         }
+    }
+}
+
+/** Un botón chico para copiar, al lado de un dato. */
+@Composable
+private fun BotonCopiar(estado: Estado, que: String, text: String) {
+    val clip = LocalClipboardManager.current
+    Box(Modifier.size(ALTO).clip(RoundedCornerShape(6.dp)).clickable { clip.setText(AnnotatedString(text)); estado.aviso("Copiado") },
+        contentAlignment = Alignment.Center) { Icono("copy", size = 16.dp, tint = LocalColores.current.dim, desc = "Copiar $que") }
+}
+
+/** Un dato con su botón copiar a la derecha (nombre, hash, magnet). */
+@Composable
+private fun DatoCopiar(estado: Estado, k: String, v: String, que: String, mono: Boolean = false, maxLines: Int = Int.MAX_VALUE) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(k, fontSize = 13.sp, color = LocalColores.current.dim, modifier = Modifier.width(130.dp))
+        Text(v, fontSize = if (mono) 13.sp else 14.sp, fontFamily = if (mono) FontFamily.Monospace else null, maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        BotonCopiar(estado, que, v)
     }
 }

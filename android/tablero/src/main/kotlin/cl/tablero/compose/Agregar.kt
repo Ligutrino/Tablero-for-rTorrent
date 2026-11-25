@@ -68,6 +68,7 @@ fun AgregarDialogo(estado: Estado, d: Dialogo.Agregar) {
     var magnets by remember(d.magnets) { mutableStateOf(d.magnets) }
     var dir by remember { mutableStateOf(estado.prefs.lastDir) }
     var start by remember { mutableStateOf(true) }
+    var seq by remember { mutableStateOf(false) }
     var tree by remember { mutableStateOf(estado.prefs.filesTree) }
     val closed = remember { mutableStateMapOf<String, Boolean>() }  // "k:carpeta" de las cerradas
     val marcas = remember {
@@ -101,8 +102,8 @@ fun AgregarDialogo(estado: Estado, d: Dialogo.Agregar) {
                         if (dup.isNotEmpty()) dups.add(dup) else ok++
                     } catch (e: Exception) { fail.add((if (label != null) "$label: " else "") + e.texto()) }
                 }
-                for (t in picked) send(mapOf("path" to t.f.path, "directory" to dir.trim(), "tags" to tags, "start" to start, "skip" to t.skip.toList()), t.f.name)
-                for (m in lines) send(mapOf("magnet" to m, "directory" to dir.trim(), "tags" to tags, "start" to start), null)
+                for (t in picked) send(mapOf("path" to t.f.path, "directory" to dir.trim(), "tags" to tags, "start" to start, "skip" to t.skip.toList(), "sequential" to seq), t.f.name)
+                for (m in lines) send(mapOf("magnet" to m, "directory" to dir.trim(), "tags" to tags, "start" to start, "sequential" to seq), null)
                 when {
                     fail.isNotEmpty() -> estado.aviso(fail.joinToString(" · "), true)
                     ok > 0 -> estado.aviso("$ok torrent${if (ok == 1) "" else "s"} agregado${if (ok == 1) "" else "s"}")
@@ -150,6 +151,11 @@ fun AgregarDialogo(estado: Estado, d: Dialogo.Agregar) {
         }
         Campo("Etiquetas") { SelectorEtiquetas(estado, marcas, nuevas) }
         CheckFila(start, { start = it }) { Text("Iniciar la descarga", fontSize = 14.sp) }
+        // Sin torrents no se sabe si este rTorrent baja en orden; si no puede, el backend lo ignora.
+        if (estado.torrents.isEmpty() || estado.torrents.any { it.sequential != null }) {
+            CheckFila(seq, { seq = it }) { Text("Descargar en orden", fontSize = 14.sp) }
+            Hint("Desde el principio, para ver o escuchar mientras baja. Se puede cambiar después en la pestaña Archivos.")
+        }
     }
 }
 

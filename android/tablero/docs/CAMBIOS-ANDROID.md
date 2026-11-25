@@ -1,5 +1,13 @@
 # Cambios de la variante Android
 
+## 0.11-android.18-kotlin (25-11-2026, rama `kotlin`)
+
+- Descargar en orden sale del menú Más: es una casilla al agregar torrents (`/api/add` acepta `sequential`, solo en el
+  backend Kotlin) y un botón en la pestaña Archivos.
+- Pestaña General: Nombre, Hash y Magnet con un botón copiar al lado de cada uno ("Identificador" pasa a "Hash"). Con un
+  torrent abierto, el menú Más ya no trae Copiar (sigue para la selección en la lista).
+- "Quitar todas las etiquetas" pasa del menú Más al diálogo Asignar etiquetas (botón "Quitar todas"; se aplica al Guardar).
+
 ## 0.11-android.17-kotlin (25-11-2026, rama `kotlin`)
 
 - El botón Más abre un menú normal (como los demás), cargado a la derecha y anclado al botón, en vez de la hoja.
