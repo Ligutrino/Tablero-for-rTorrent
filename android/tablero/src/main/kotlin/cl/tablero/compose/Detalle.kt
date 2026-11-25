@@ -200,14 +200,15 @@ private const val AVAIL_EST = "Estimada a partir del avance de los pares conecta
 private fun General(estado: Estado, t: Torrent, d: Detalles?) {
     val c = LocalColores.current
     val clip = LocalClipboardManager.current
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    // Todas las filas de datos con el mismo alto (ALTO), tengan o no botón a la derecha.
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        Row(Modifier.heightIn(min = ALTO), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Descargado", fontSize = 13.sp, color = c.dim, modifier = Modifier.width(110.dp))
             MapaPiezas(t, d, Modifier.weight(1f).height(16.dp))
             Text(Formato.pct(t.progress), fontSize = 13.sp, modifier = Modifier.width(60.dp))
         }
         val av = d?.availability
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.heightIn(min = ALTO), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Disponibilidad", fontSize = 13.sp, color = c.dim, modifier = Modifier.width(110.dp))
             Box(Modifier.weight(1f).height(16.dp).clip(RoundedCornerShape(3.dp)).background(c.barBg)) {
                 Box(Modifier.fillMaxHeight().fillMaxWidth((av ?: 0.0).coerceIn(0.0, 1.0).toFloat()).background(c.good.copy(alpha = 0.8f)))
@@ -215,7 +216,7 @@ private fun General(estado: Estado, t: Torrent, d: Detalles?) {
             Text(if (av == null) "…" else Formato.n2(av), fontSize = 13.sp, modifier = Modifier.width(60.dp))
         }
         Hint(if (d != null && !d.availabilityEstimated) AVAIL_TIP else AVAIL_EST)
-        HorizontalDivider(color = c.line)
+        HorizontalDivider(color = c.line, modifier = Modifier.padding(vertical = 8.dp))
         @Composable fun dato(k: String, v: String, color: Color = c.text) = Dato(k) { Text(v, fontSize = 14.sp, color = color) }
         dato("Estado", statusText(t), statusColor(c, t.status))
         dato("Tamaño", "${Formato.size(t.size)} (${Formato.n0(t.files)} archivo${if (t.files == 1L) "" else "s"})")
@@ -235,26 +236,11 @@ private fun General(estado: Estado, t: Torrent, d: Detalles?) {
                 for (x in t.tags) Chip(estado, x)
             }
         }
-        Dato("Carpeta") {
-            Column {
-                Text(d?.basePath ?: t.directory, fontSize = 14.sp)
-                TextButton(onClick = { estado.abrirCarpeta(t.hash) }, contentPadding = PaddingValues(horizontal = 0.dp)) {
-                    Icono("folder-open", size = 16.dp); Spacer(Modifier.width(6.dp)); Text("Abrir")
-                }
-            }
-        }
         DatoCopiar(estado, "Nombre", t.name, "el nombre")
-        DatoCopiar(estado, "Hash", t.hash, "el hash", mono = true)
-        Hint("Huella única del torrent (info-hash), la misma en toda la red")
+        DatoBoton("Carpeta", d?.basePath ?: t.directory) { BotonIcono("folder-open", "Abrir la carpeta") { estado.abrirCarpeta(t.hash) } }
+        DatoCopiar(estado, "Hash", t.hash, "el hash", mono = true, hint = "Huella única del torrent (info-hash), la misma en toda la red")
         DatoCopiar(estado, "Magnet", magnetOf(t), "el enlace magnet", maxLines = 1)
-        if (t.message.isNotEmpty()) Dato("Mensaje") {
-            Column {
-                Text(messageText(t), fontSize = 14.sp)
-                TextButton(onClick = { clip.setText(AnnotatedString(messageText(t))); estado.aviso("Copiado") }, contentPadding = PaddingValues(horizontal = 0.dp)) {
-                    Icono("copy", size = 16.dp); Spacer(Modifier.width(6.dp)); Text("Copiar")
-                }
-            }
-        }
+        if (t.message.isNotEmpty()) DatoCopiar(estado, "Mensaje", messageText(t), "el mensaje")
         if (d != null && d.chunks > 0) dato("Piezas", "${Formato.n0(d.chunks)} × ${Formato.size(d.chunkSize)}")
         dato("Privado", if (t.private) "Sí" else "No")
     }
@@ -262,9 +248,9 @@ private fun General(estado: Estado, t: Torrent, d: Detalles?) {
 
 @Composable
 private fun Dato(k: String, v: @Composable () -> Unit) {
-    Row(Modifier.fillMaxWidth()) {
-        Text(k, fontSize = 13.sp, color = LocalColores.current.dim, modifier = Modifier.width(130.dp).padding(top = 1.dp))
-        Box(Modifier.weight(1f)) { v() }
+    Row(Modifier.fillMaxWidth().heightIn(min = ALTO), verticalAlignment = Alignment.CenterVertically) {
+        Text(k, fontSize = 13.sp, color = LocalColores.current.dim, modifier = Modifier.width(130.dp))
+        Box(Modifier.weight(1f).padding(vertical = 6.dp)) { v() }
     }
 }
 
@@ -1018,21 +1004,31 @@ private fun Opciones(estado: Estado, t: Torrent) {
     }
 }
 
-/** Un botón chico para copiar, al lado de un dato. */
+/** Un botón de ícono de ALTO × ALTO, al lado de un dato (copiar, abrir la carpeta). */
 @Composable
-private fun BotonCopiar(estado: Estado, que: String, text: String) {
-    val clip = LocalClipboardManager.current
-    Box(Modifier.size(ALTO).clip(RoundedCornerShape(6.dp)).clickable { clip.setText(AnnotatedString(text)); estado.aviso("Copiado") },
-        contentAlignment = Alignment.Center) { Icono("copy", size = 16.dp, tint = LocalColores.current.dim, desc = "Copiar $que") }
+private fun BotonIcono(icon: String, desc: String, onClick: () -> Unit) {
+    Box(Modifier.size(ALTO).clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Icono(icon, size = 16.dp, tint = LocalColores.current.dim, desc = desc)
+    }
 }
 
-/** Un dato con su botón copiar a la derecha (nombre, hash, magnet). */
+/** Un dato con un botón a la derecha; [hint] va debajo del valor. */
 @Composable
-private fun DatoCopiar(estado: Estado, k: String, v: String, que: String, mono: Boolean = false, maxLines: Int = Int.MAX_VALUE) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+private fun DatoBoton(k: String, v: String, mono: Boolean = false, maxLines: Int = Int.MAX_VALUE, hint: String? = null, boton: @Composable () -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = ALTO), verticalAlignment = Alignment.CenterVertically) {
         Text(k, fontSize = 13.sp, color = LocalColores.current.dim, modifier = Modifier.width(130.dp))
-        Text(v, fontSize = if (mono) 13.sp else 14.sp, fontFamily = if (mono) FontFamily.Monospace else null, maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        BotonCopiar(estado, que, v)
+        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+            Text(v, fontSize = if (mono) 13.sp else 14.sp, fontFamily = if (mono) FontFamily.Monospace else null, maxLines = maxLines,
+                overflow = TextOverflow.Ellipsis)
+            if (hint != null) Hint(hint)
+        }
+        boton()
     }
+}
+
+/** Un dato con su botón copiar a la derecha (nombre, hash, magnet, mensaje). */
+@Composable
+private fun DatoCopiar(estado: Estado, k: String, v: String, que: String, mono: Boolean = false, maxLines: Int = Int.MAX_VALUE, hint: String? = null) {
+    val clip = LocalClipboardManager.current
+    DatoBoton(k, v, mono, maxLines, hint) { BotonIcono("copy", "Copiar $que") { clip.setText(AnnotatedString(v)); estado.aviso("Copiado") } }
 }

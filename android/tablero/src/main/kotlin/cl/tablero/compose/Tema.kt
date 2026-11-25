@@ -64,12 +64,6 @@ val CLARO = Colores(
 val LocalColores = staticCompositionLocalOf { OSCURO }
 
 /**
- * El espacio de las barras del sistema, medido en la ventana principal. Dentro de un Dialog, Android entrega
- * WindowInsets en cero aunque la ventana llegue bajo la barra de navegación, así que Ventana usa esta medida.
- */
-val LocalBarras = compositionLocalOf { androidx.compose.foundation.layout.PaddingValues(0.dp) }
-
-/**
  * La de Material con el alto de línea relativo a la letra (1,35 como en app.css): con un fontSize
  * propio, el alto fijo de Material (24 sp en bodyLarge) cortaba o descentraba textos chicos.
  */
@@ -100,8 +94,7 @@ fun TableroTema(theme: String, content: @Composable () -> Unit) {
         outline = c.line, outlineVariant = c.line, error = c.bad, secondaryContainer = c.sel, onSecondaryContainer = c.text,
         primaryContainer = c.sel, onPrimaryContainer = c.text,
     )
-    val barras = androidx.compose.foundation.layout.WindowInsets.systemBars.asPaddingValues()
-    CompositionLocalProvider(LocalColores provides c, LocalBarras provides barras) {
+    CompositionLocalProvider(LocalColores provides c) {
         MaterialTheme(colorScheme = scheme, typography = TIPOGRAFIA, content = content)
     }
 }

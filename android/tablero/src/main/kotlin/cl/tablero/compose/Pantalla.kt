@@ -1,5 +1,11 @@
 package cl.tablero.compose
 
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.heightIn
@@ -81,7 +87,9 @@ fun TableroPantalla(estado: Estado) {
         }
         val det = estado.detalle?.let { estado.byHash[it] }
         ModalNavigationDrawer(drawerState = drawer, gesturesEnabled = det == null, drawerContent = {
-            ModalDrawerSheet(drawerContainerColor = c.panel, modifier = Modifier.width(300.dp)) {
+            // La hoja termina sobre la barra de navegación (no se mete en ella); arriba sí va bajo la de estado.
+            ModalDrawerSheet(drawerContainerColor = c.panel, windowInsets = WindowInsets.statusBars,
+                modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)).width(300.dp)) {
                 // Los filtros se desplazan; la versión queda fija abajo, siempre a la vista.
                 Box(Modifier.weight(1f)) { Filtros(estado) }
                 if (estado.version.isNotEmpty()) {

@@ -1,5 +1,9 @@
 package cl.tablero.compose
 
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.Box
@@ -110,12 +114,12 @@ fun Ventana(
     val c = LocalColores.current
     val yo = estado.dialogo
     val cerrar = { onCancel(); estado.dialogo = null }
-    // La ventana ocupa toda la pantalla y la tarjeta se centra dentro del espacio libre de las barras del sistema: así
-    // nada queda bajo la barra de navegación (una ventana centrada a su alto se metía ahí cuando era más alta que la
-    // de estado). Tocar fuera de la tarjeta cierra, como en AlertDialog.
-    Dialog(onDismissRequest = cerrar, properties = estado.plataforma.propiedadesDialogo) {
-        Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null, onClick = cerrar)
-            .padding(LocalBarras.current)
+    // Se dibuja en la misma ventana de la app, encima de todo (no en una ventana de diálogo aparte): dentro de un Dialog,
+    // Android entrega las barras del sistema en cero y la tarjeta se metía bajo la barra de navegación. Atrás lo cierra
+    // por Estado.atras(); tocar fuera de la tarjeta también, como en AlertDialog.
+    run {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)).clickable(remember { MutableInteractionSource() }, null, onClick = cerrar)
+            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.systemBars.union(androidx.compose.foundation.layout.WindowInsets.ime))
             .padding(horizontal = 16.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
             Surface(Modifier.widthIn(max = 560.dp).fillMaxWidth().clickable(remember { MutableInteractionSource() }, null) {},
                 shape = AlertDialogDefaults.shape, color = AlertDialogDefaults.containerColor, tonalElevation = AlertDialogDefaults.TonalElevation) {

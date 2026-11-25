@@ -1,5 +1,14 @@
 # Cambios de la variante Android
 
+## 0.11-android.22-kotlin (25-11-2026, rama `kotlin`)
+
+- Diálogos dibujados en la misma ventana de la app (capa encima de todo, con su fondo oscuro) en vez de una ventana
+  Dialog aparte: dentro del Dialog, Android entregaba las barras en cero y la tarjeta se metía bajo la barra de navegación.
+  Atrás y tocar fuera los cierran. Se quita LocalBarras (.21).
+- Barra lateral: la hoja termina sobre la barra de navegación.
+- Pestaña General: todas las filas de datos con el mismo alto; Abrir la carpeta pasa a botón de ícono como copiar; orden
+  Nombre, Carpeta, Hash, Magnet; el mensaje del rastreador también con botón copiar.
+
 ## 0.11-android.21-kotlin (25-11-2026, rama `kotlin`)
 
 - Diálogos: el espacio de las barras del sistema se mide en la ventana principal (LocalBarras) y se pasa a Ventana. Dentro
