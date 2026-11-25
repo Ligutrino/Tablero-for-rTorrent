@@ -35,7 +35,7 @@ import xmlrpc.client
 import zipfile
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.10.1-android.1"
+VERSION = "0.11-android.1"
 TAGS_KEY = "tablero_tags"
 OPTS_KEY = "tablero_opts"
 POS_KEY = "tablero_pos"
@@ -60,17 +60,146 @@ def clean_opts(o):
         out[k] = max(0, int(o.get(k) or 0))
     out["stop_ratio"] = max(0.0, round(float(o.get("stop_ratio") or 0), 2))
     out["stop_hours"] = max(0.0, round(float(o.get("stop_hours") or 0), 1))
+    # Conexiones and Al sembrar of its own; without them the torrent follows the general ones.
+    out["seed_own"] = bool(o.get("seed_own"))
+    for k in PEER_KEYS:
+        if o.get(k) is not None:
+            out[k] = max(0, int(o[k]))
+    if "peers_min" in out and "peers_max" in out and out["peers_min"] > out["peers_max"]:
+        raise ValueError("Los pares mínimos no pueden superar a los máximos")
     return out
 
 
-def rule_reached(t, opts, now):
-    """Whether a seeding torrent met its stop rule."""
+PEER_KEYS = ("peers_max", "peers_min", "uploads_max")
+
+
+def seed_own(opts):
+    """Options from before 0.11 had no seed_own: a rule set then was the torrent's own."""
+    if "seed_own" in opts:
+        return bool(opts["seed_own"])
+    return bool(opts.get("stop_ratio") or opts.get("stop_hours"))
+
+
+def seed_rule(opts, general):
+    """The stop rule a torrent follows: its own, or the general one."""
+    src = opts if seed_own(opts) else (general or {})
+    return {"stop_ratio": src.get("stop_ratio") or 0, "stop_hours": src.get("stop_hours") or 0}
+
+
+def rule_reached(t, opts, now, general=None):
+    """Whether a seeding torrent met its stop rule (its own or the general one)."""
     if not (t["complete"] and t["state"]) or opts.get("rule_done"):
         return False
-    if opts.get("stop_ratio") and t["ratio"] >= opts["stop_ratio"]:
+    rule = seed_rule(opts, general)
+    if rule["stop_ratio"] and t["ratio"] >= rule["stop_ratio"]:
         return True
-    return bool(opts.get("stop_hours") and t["finished"]
-                and now - t["finished"] >= opts["stop_hours"] * 3600)
+    return bool(rule["stop_hours"] and t["finished"]
+                and now - t["finished"] >= rule["stop_hours"] * 3600)
+
+
+class General:
+    """Límites y conexiones for all torrents together, in general.json, plus Al sembrar
+    for every torrent without its own rule. Tablero applies them itself (rtorrent.rc is
+    not touched). None leaves rTorrent's value, kept in "orig" with the rTorrent process
+    it was read from, to go back to it when a value is emptied."""
+    KEYS = ("max_sockets", "peers_max", "uploads_max", "stop_ratio", "stop_hours")
+    GLOBAL = {"max_sockets": "network.max_open_sockets"}
+    # Until changed: BiglyBT's defaults (250 connections in all, 50 per torrent, 4 uploads per
+    # torrent; uTorrent uses 200, 50 and 4). rTorrent's own (200 and 50 per torrent, about
+    # 1000 in all) open many more connections and can slow down the rest of the network.
+    DEFAULTS = {"max_sockets": 250, "peers_max": 50, "uploads_max": 4, "stop_ratio": 0, "stop_hours": 0}
+
+    def __init__(self, path):
+        self.path = path
+        self.lock = threading.Lock()
+        self.data = self._read()
+
+    def _read(self):
+        try:
+            with open(self.path, encoding="utf-8") as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            d = {}
+        d = d if isinstance(d, dict) else {}
+        return {k: d[k] if k in d else self.DEFAULTS.get(k) for k in self.KEYS + ("orig",)}
+
+    def _write(self):
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        tmp = self.path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(self.data, f)
+        os.replace(tmp, self.path)
+
+    def reload(self):
+        with self.lock:
+            self.data = self._read()
+
+    def get(self):
+        with self.lock:
+            return {k: self.data.get(k) for k in self.KEYS}
+
+    def save(self, o):
+        d = {}
+        for k in ("max_sockets",) + PEER_KEYS:
+            v = o.get(k)
+            d[k] = None if v is None or v == "" else max(0, int(v))
+        d.pop("peers_min")  # follows peers_max (half of it), as rTorrent's own defaults
+        if d["max_sockets"] is not None and d["max_sockets"] < 10:
+            raise ValueError("Deja al menos 10 conexiones en total, o el campo vacío")
+        if d["peers_max"] is not None and d["peers_max"] < 1:
+            raise ValueError("Deja al menos 1 par por torrent, o el campo vacío")
+        d["stop_ratio"] = max(0.0, round(float(o.get("stop_ratio") or 0), 2))
+        d["stop_hours"] = max(0.0, round(float(o.get("stop_hours") or 0), 1))
+        with self.lock:
+            self.data.update(d)
+            self._write()
+        return d
+
+    def apply(self, rt):
+        """Sets the totals in rTorrent; an empty one goes back to rTorrent's own value,
+        read before Tablero first changed it in this rTorrent process."""
+        pid = rt.call("system.pid")
+        names = list(self.GLOBAL.values())
+        now = rt.multicall([(m, [""]) for m in names])
+        with self.lock:
+            orig = self.data.get("orig") or {}
+            if orig.get("pid") != pid:
+                orig = {"pid": pid, **{k: v for k, v in zip(self.GLOBAL, now) if isinstance(v, int)}}
+                self.data["orig"] = orig
+                self._write()
+            want = {k: self.data.get(k) if self.data.get(k) is not None else orig.get(k) for k in self.GLOBAL}
+        calls = [(m + ".set", ["", want[k]]) for (k, m), cur in zip(self.GLOBAL.items(), now)
+                 if want[k] is not None and cur != want[k]]
+        if calls:
+            rt.multicall(calls)
+        return {k: orig.get(k) for k in self.GLOBAL}
+
+    def rtorrent_values(self):
+        with self.lock:
+            orig = self.data.get("orig") or {}
+            return {k: orig.get(k) for k in self.GLOBAL}
+
+
+def general_peers(general):
+    """Each torrent's Conexiones from the general options: the minimum (below which rTorrent
+    asks the trackers for more pares) is half the maximum, as in rTorrent's own defaults."""
+    g = general or {}
+    mx = g.get("peers_max")
+    return {"peers_max": mx, "peers_min": None if mx is None else mx // 2, "uploads_max": g.get("uploads_max")}
+
+
+def wanted_peers(t, general):
+    """The Conexiones values a torrent should have and doesn't: its own, else the general
+    ones (rTorrent changes them by itself when a download finishes). Values left to
+    rTorrent are not touched."""
+    opts, out, gp = t.get("opts") or {}, {}, general_peers(general)
+    if "peers_max" in opts and "peers_min" not in opts and gp["peers_min"] is not None:
+        gp["peers_min"] = min(gp["peers_min"], opts["peers_max"])  # never above its own maximum
+    for k in PEER_KEYS:
+        want = opts[k] if k in opts else gp[k]
+        if want is not None and t.get(k) != want:
+            out[k] = want
+    return out
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 CONFIG_BASE = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
 CONFIG_DIR = os.path.join(CONFIG_BASE, "tablero")
@@ -188,10 +317,10 @@ class RTorrent:
                     break
                 chunks.append(data)
         raw = b"".join(chunks)
-        sep = raw.find(b"\r\n\r\n")
         if not raw:
             # rTorrent 0.16 cierra sin responder a system.shutdown.normal.
             raise ConnectionError("rTorrent cerró la conexión sin responder")
+        sep = raw.find(b"\r\n\r\n")
         payload = raw[sep + 4:] if sep >= 0 else raw
         result, _ = xmlrpc.client.loads(payload.decode("utf-8", "replace"))
         return result[0]
@@ -848,9 +977,15 @@ class RTorrentBackend:
         calls = [("d.custom.set", [h, OPTS_KEY, json.dumps(opts)])]
         if "priority" in o:
             calls.append(("d.priority.set", [h, max(0, min(3, int(o["priority"])))]))
-        for k in ("peers_max", "peers_min", "uploads_max"):
-            if o.get(k) is not None:
-                calls.append(("d.%s.set" % k, [h, max(0, int(o[k]))]))
+        defaults = None
+        gp = general_peers(self.general.get() if self.general else {})
+        for k in PEER_KEYS:
+            want = opts[k] if k in opts else gp[k]
+            if want is None and k in o:  # back to rTorrent's own setting
+                defaults = defaults or self.peer_defaults(self.rt.call("d.complete", h))
+                want = defaults[k]
+            if want is not None:
+                calls.append(("d.%s.set" % k, [h, want]))
         self.rt.multicall(calls)
         limited = opts["down_limit"] or opts["up_limit"]
         want = self._define_throttle(h, opts) if limited else ""
@@ -864,6 +999,37 @@ class RTorrentBackend:
             finally:
                 if started:
                     self.rt.call("d.start", h)
+
+    general = None
+
+    def peer_defaults(self, complete=False):
+        """rTorrent's own Conexiones values for a torrent (rtorrent.rc): the seeding ones
+        apply to complete torrents when set (not -1)."""
+        r = self.rt.multicall([(m, [""]) for m in (
+            "throttle.max_peers.normal", "throttle.min_peers.normal", "throttle.max_peers.seed",
+            "throttle.min_peers.seed", "throttle.max_uploads")])
+        r = [x if isinstance(x, int) else -1 for x in r]
+        return {"peers_max": r[2] if complete and r[2] >= 0 else r[0],
+                "peers_min": r[3] if complete and r[3] >= 0 else r[1], "uploads_max": max(0, r[4])}
+
+    def apply_peers(self, torrents):
+        """Gives each torrent the Conexiones it should have (its own or the general ones)."""
+        general = self.general.get() if self.general else {}
+        calls = [("d.%s.set" % k, [t["hash"], v]) for t in torrents for k, v in wanted_peers(t, general).items()]
+        if calls:
+            self.rt.multicall(calls)
+        return len(calls)
+
+    def apply_global(self):
+        return self.general.apply(self.rt) if self.general else {}
+
+    def reset_peers(self, torrents, keys):
+        """Back to rTorrent's own Conexiones values, on torrents without their own."""
+        d = {c: self.peer_defaults(c) for c in (False, True)}
+        calls = [("d.%s.set" % k, [t["hash"], d[bool(t["complete"])][k]])
+                 for t in torrents for k in keys if k not in (t.get("opts") or {})]
+        if calls:
+            self.rt.multicall(calls)
 
     def instance(self):
         return self.rt.call("system.pid")
@@ -1139,9 +1305,15 @@ class History:
         instance = self.backend.instance()
         if self.restored != instance:
             self.backend.restore_options(data["torrents"])
+            self.backend.apply_global()  # rTorrent starts again with its own totals
             self.restored = instance
+        general = self.backend.general.get() if self.backend.general else {}
+        try:
+            self.backend.apply_peers(data["torrents"])  # rTorrent resets them when a download finishes
+        except (OSError, xmlrpc.client.Fault) as e:
+            print("conexiones: %s" % e, file=sys.stderr)
         for t in data["torrents"]:
-            if rule_reached(t, t["opts"], now):
+            if rule_reached(t, t["opts"], now, general):
                 self.backend.action("stop", [t["hash"]])
                 self.backend.mark_rule_done(t["hash"], t["opts"])
                 print("%s: detenido por su regla de siembra" % t["name"], file=sys.stderr)
@@ -1553,7 +1725,7 @@ def check_target(target):
     target = os.path.expanduser((target or "").strip())
     if not os.path.isabs(target):
         raise ValueError("Escribe la ruta completa de la carpeta (por ejemplo %s)" % (
-            "/storage/emulated/0/Download/torrents" if PLATFORM == "android" else "/home/usuario/Torrents"))
+            "/storage/emulated/0/Download/Torrents" if PLATFORM == "android" else "/home/usuario/Torrents"))
     return os.path.realpath(target)
 
 
@@ -1927,6 +2099,29 @@ class DemoBackend:
 
     def restore_options(self, torrents):
         pass
+
+    general = None
+
+    def peer_defaults(self, complete=False):
+        return {"peers_max": 200, "peers_min": 100, "uploads_max": 50}
+
+    def apply_global(self):
+        return {"max_sockets": 1024}
+
+    def reset_peers(self, torrents, keys):
+        with self.lock:
+            for t in torrents:
+                for k in keys:
+                    if k not in (t.get("opts") or {}):
+                        self._find([t["hash"]])[0][k] = self.peer_defaults()[k]
+
+    def apply_peers(self, torrents):
+        general = self.general.get() if self.general else {}
+        with self.lock:
+            for t in torrents:
+                for k, v in wanted_peers(t, general).items():
+                    self._find([t["hash"]])[0][k] = v
+        return 0
 
     def mark_rule_done(self, h, opts):
         with self.lock:
@@ -2426,6 +2621,10 @@ class Backups:
                 res["tags"] = len(tags.get("tags", tags) if isinstance(tags, dict) else [])
             if parts.get("prefs") and "tablero/prefs.json" in names:
                 res["prefs"] = json.loads(z.read("tablero/prefs.json"))
+            if parts.get("prefs") and "tablero/general.json" in names and self.backend.general:
+                with open(self.backend.general.path, "wb") as f:
+                    f.write(z.read("tablero/general.json"))
+                self.backend.general.reload()
             if parts.get("access") and "tablero/access.json" in names:
                 with open(self.access.path, "wb") as f:
                     f.write(z.read("tablero/access.json"))
@@ -2639,12 +2838,40 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(self.history.get(h))
         if url.path == "/api/tags":
             return self._json(self.tagstore.get())
+        if url.path == "/api/general":
+            return self._json(self._general())
         if url.path == "/api/local-ip":
             return self._json({"ip": local_ip()})
         m = re.fullmatch(r"/logos/([0-9a-f]{16}\.(png|jpg|gif|webp))", url.path)
         if m:
             return self._logo(m.group(1), m.group(2))
         return super().do_GET()
+
+    def _set_general(self, body):
+        old = general_peers(self.backend.general.get())
+        new = general_peers(self.backend.general.save(body))
+        try:
+            self.backend.apply_global()
+            torrents = self.backend.list()["torrents"]
+            # An emptied value goes back to rTorrent's own on the torrents that followed it.
+            cleared = [k for k in PEER_KEYS if old[k] is not None and new[k] is None]
+            if cleared:
+                self.backend.reset_peers(torrents, cleared)
+            self.backend.apply_peers(torrents)
+        except (OSError, xmlrpc.client.Fault):
+            pass  # applied when rTorrent answers again
+        return self._general()
+
+    def _general(self):
+        """The general options, with rTorrent's own values (shown when a field is empty):
+        the totals, and each torrent's Conexiones from rtorrent.rc."""
+        out = {"general": self.backend.general.get(), "rtorrent": {}, "torrent": {}}
+        try:
+            out["rtorrent"] = self.backend.apply_global()
+            out["torrent"] = self.backend.peer_defaults()
+        except (OSError, xmlrpc.client.Fault):
+            pass  # rTorrent down: no placeholders
+        return out
 
     def _backup_file(self, path):
         """Exportar in a browser: the backup as a download."""
@@ -2720,6 +2947,7 @@ class Handler(SimpleHTTPRequestHandler):
             "/api/open-folder": lambda: b.open_folder(body["hash"], body.get("index"), body.get("dir")),
             "/api/move": lambda: b.move_pos(body["hashes"], body["where"]),
             "/api/options": lambda: b.set_options(body["hash"], body["options"]),
+            "/api/general": lambda: self._set_general(body),
             "/api/rename-folder": lambda: b.rename_folder(body["hash"], body.get("name")),
             "/api/relocate": lambda: b.relocate(body["hashes"], body["target"], bool(body.get("move")),
                                                 bool(body.get("check"))),
@@ -2788,6 +3016,8 @@ def run(argv=None):
         move_old_config()
     os.makedirs(CONFIG_DIR, exist_ok=True)
     Handler.backend = DemoBackend() if a.demo else RTorrentBackend(a.scgi)
+    Handler.backend.general = General(os.path.join(
+        CONFIG_DIR, "general-demo.json" if a.demo else "general.json"))
     Handler.history = History(Handler.backend)
     Handler.tagstore = TagStore(os.path.join(
         CONFIG_DIR, "tags-demo.json" if a.demo else "tags.json"))

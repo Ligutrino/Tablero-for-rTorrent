@@ -77,6 +77,15 @@ object TableroServidor : EngineServiceHook {
         hilo = null
     }
 
+    /**
+     * Salir (botón de la notificación): cierra la pantalla de Tablero, la quita de las apps recientes
+     * y detiene tablero.py. Después el servicio de :engine se detiene solo (alSalir de TableroAvisos).
+     */
+    fun salir() {
+        TableroActivity.cerrar()
+        thread(name = "tablero-salir") { detener() }
+    }
+
     /** true cuando el servidor ya contesta (para reintentar la carga de la WebView). */
     fun responde(): Boolean = try {
         (URL(url + "api/access").openConnection() as HttpURLConnection).run {

@@ -20,7 +20,7 @@ LibreTorrent solo tienen que hablar con `TorrentEngine`.
 
 ## Interfaz: Tablero
 
-`android/tablero` es la app principal: **Tablero 0.10.1-android.1** (tablero.py + web/) corriendo con
+`android/tablero` es la app principal: **Tablero 0.11-android.1** (tablero.py + web/) corriendo con
 Python embebido (Chaquopy 17.2, Python 3.12) y mostrado en una WebView, sobre el mismo `:engine`.
 
 ```
@@ -70,11 +70,11 @@ docker build -o out .
 docker build --build-arg ABIS="arm64-v8a armeabi-v7a x86_64" -o out .
 
 # Instalar en el teléfono (depuración USB activada)
-adb install -r out/tablero-debug.apk          # la app con Tablero
+adb install -r out/tablero.apk                # la app con Tablero
 adb install -r out/rtorrent-demo-debug.apk    # opcional: la app de prueba mínima del motor
 ```
 
-`out/` queda con `tablero-debug.apk`, `rtorrent-demo-debug.apk` y `native/<abi>/librtorrent.so`. Las dos apps son independientes: cada una tiene sus propios torrents y sus propias descargas.
+`out/` queda con `tablero.apk`, `rtorrent-demo-debug.apk` y `native/<abi>/librtorrent.so`. Las dos apps son independientes: cada una tiene sus propios torrents y sus propias descargas.
 El APK se firma con `android/debug.keystore` (incluido a propósito), así que cada compilación nueva
 se instala encima de la anterior con `adb install -r`.
 

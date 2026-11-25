@@ -23,6 +23,18 @@ def check(name, res, ok=lambda b: True):
     print(("ok  " if good else "FALLO ") + f"{name} [{st}] {json.dumps(body, ensure_ascii=False)[:160]}")
     return body
 
+def rpc(method, *params):
+    """XML-RPC directo a rtorrent por el socket SCGI (para ver lo que Tablero aplicó)."""
+    import socket, xmlrpc.client
+    body = xmlrpc.client.dumps(params, method).encode()
+    hdr = b"CONTENT_LENGTH\0%d\0SCGI\x001\0" % len(body)
+    s = socket.socket(socket.AF_UNIX); s.connect(os.path.join(W, "base", "rpc.sock"))
+    s.sendall(b"%d:" % len(hdr) + hdr + b"," + body)
+    raw = b""
+    while chunk := s.recv(65536): raw += chunk
+    s.close()
+    return xmlrpc.client.loads(raw.split(b"\r\n\r\n", 1)[1])[0][0]
+
 for _ in range(60):
     if req("/api/access")[0] == 200: break
     time.sleep(0.5)
@@ -68,6 +80,21 @@ check("relocate", req("/api/relocate", {"hashes": [TH], "target": os.path.join(W
 time.sleep(2)
 check("tags quedaron en d.custom", req("/api/torrents"),
       lambda b: any(t["hash"] == TH and set(t["tags"]) == {"a", "b"} for t in b["torrents"]))
+check("general (BiglyBT por defecto)", req("/api/general"),
+      lambda b: b["general"]["max_sockets"] == 250 and b["general"]["peers_max"] == 50)
+time.sleep(1)
+# rtorrent 0.16 rechaza network.max_open_sockets < 512 ("minimum is 512"): el 250 de Tablero no se aplica.
+print("AVISO network.max_open_sockets =", rpc("network.max_open_sockets"), "(Tablero pidió 250; rtorrent 0.16 exige 512 o más)")
+check("general POST", req("/api/general", {"max_sockets": 300, "peers_max": 40, "uploads_max": 3}))
+time.sleep(1)
+check("general aplicado tras POST (por torrent)", (200, [rpc("d.peers_max", TH), rpc("d.uploads_max", TH)]),
+      lambda v: v == [40, 3])
+hb = urllib.request.Request(B + "/api/torrents", headers={"Host": "evil.example:18090"})
+try:
+    st = urllib.request.urlopen(hb, timeout=10).status
+except urllib.error.HTTPError as e:
+    st = e.code
+check("Host ajeno rechazado (DNS rebinding)", (200, st), lambda v: v == 403)
 check("remove con datos", req("/api/action", {"action": "remove", "hashes": [TH], "data": True}))
 time.sleep(1)
 if os.path.exists(os.path.join(W, "dl", "moved", "payload.bin")):

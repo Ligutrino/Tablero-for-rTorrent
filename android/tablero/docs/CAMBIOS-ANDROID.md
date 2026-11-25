@@ -1,5 +1,30 @@
 # Cambios de la variante Android
 
+## 0.11-android.1 (24-11-2026)
+
+La variante 0.10.1-android.4 sobre Tablero 0.11 de escritorio, que es exactamente su base. Solo cambia el número de versión.
+
+## 0.10.1-android.4 (24-11-2026)
+
+Sobre escritorio en desarrollo con el ítem 49 rehecho: Conexiones generales = conexiones en total (`network.max_open_sockets`), pares por torrent y subidas por torrent; los pares mínimos son la mitad del máximo. Valores por defecto como BiglyBT: 250 en total, 50 pares y 4 subidas por torrent. `android.patch` aplicó sin cambios.
+
+## 0.10.1-android.3 (24-11-2026)
+
+Sobre Tablero de escritorio en desarrollo después de 0.10.1, que trae el ítem 49:
+
+- "Límites y conexiones" (antes "Límites de velocidad"): además de la velocidad, Conexiones generales (pares máximos y mínimos, subidas simultáneas) y Al sembrar para todos los torrents.
+- Pestaña Opciones de cada torrent: un campo vacío usa el valor general; "Usar general" y General/Propia en Al sembrar. Lo propio de un torrent manda sobre lo general.
+- Los "?" de ayuda nuevos se abren tocándolos, como los demás.
+
+A ancho de teléfono, en la pestaña Opciones el nombre va arriba de sus controles, para que Prioridad (Alta · Normal · Baja · Desactivada) no se corte a la derecha. Salió de esta variante y ya está también en escritorio.
+
+Corrección del paquete: el `android.patch` de 0.10.1-android.2 se había generado contra una copia de escritorio a medio cambiar; el de esta versión está comprobado contra la versión de escritorio actual.
+
+## 0.10.1-android.2 (24-11-2026)
+
+- La carpeta de descarga por defecto es `/storage/emulated/0/Download/Torrents`, con T mayúscula, en los ejemplos de Tablero y en la guía.
+- Módulo de ejemplo: Salir cierra Tablero. `TableroServidor.salir()` cierra la pantalla, la quita de las apps recientes y detiene tablero.py; `TableroAvisos` lo llama en su botón Salir y ya no vuelve a poner la notificación después. La pantalla de espera deja de reintentar cuando se cerró.
+
 ## 0.10.1-android.1 (24-11-2026)
 
 La variante android.3 sobre Tablero 0.10.1 de escritorio (`android.patch` aplicado sin cambios, salvo el número de versión). Trae lo de 0.10.1:

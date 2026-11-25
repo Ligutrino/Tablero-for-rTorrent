@@ -4,7 +4,7 @@
 #
 #   docker build -o out .
 #
-# Deja en ./out:  tablero-debug.apk (app con Tablero), rtorrent-demo-debug.apk (prueba mínima)
+# Deja en ./out:  tablero.apk (app con Tablero), rtorrent-demo-debug.apk (prueba mínima)
 #                y native/<abi>/librtorrent.so
 # ABIs por defecto: arm64-v8a. Para más:  --build-arg ABIS="arm64-v8a armeabi-v7a x86_64"
 
@@ -61,7 +61,7 @@ ARG ABIS="arm64-v8a"
 RUN --mount=type=cache,target=/root/.gradle \
     ./gradlew --no-daemon -Pabis="$(echo ${ABIS} | tr ' ' ',')" :app:assembleDebug :tablero:assembleDebug \
     && cp app/build/outputs/apk/debug/app-debug.apk /rtorrent-demo-debug.apk \
-    && cp tablero/build/outputs/apk/debug/tablero-debug.apk /tablero-debug.apk
+    && cp tablero/build/outputs/apk/debug/tablero-debug.apk /tablero.apk
 
 ############################ Opcional: prueba en Linux ############################
 # docker build --target hosttest .
@@ -74,5 +74,5 @@ RUN --mount=type=cache,target=/root/.gradle tools/host-test.sh
 
 ############################ 4. Salida ############################
 FROM scratch AS out
-COPY --from=apk /rtorrent-demo-debug.apk /tablero-debug.apk /
+COPY --from=apk /rtorrent-demo-debug.apk /tablero.apk /
 COPY --from=native /src/native/out/ /native/

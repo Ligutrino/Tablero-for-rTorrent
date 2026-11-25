@@ -585,6 +585,11 @@ svg.ico.big { width: 16px; height: 16px; margin: 0; }
 .opt-rules { display: flex; flex-direction: column; gap: 8px; }
 .opt-rules .check { display: flex; align-items: center; gap: 8px; }
 .opt-rules .num-in input { width: 72px; }
+.opt-rules > .seg { align-self: flex-start; }
+.opt-general { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin-top: 8px; }
+.opt-general .hint { margin: 0; }
+.limits .opt-cols { gap: 8px 20px; }
+.limits .opt-cols .num-in input, .limits .opt-rules .num-in input { width: 72px; }
 .seg label { display: inline-flex; cursor: pointer; }
 .seg label input { display: none; }
 .seg label span { padding: 4px 12px; color: var(--dim); }
@@ -686,4 +691,12 @@ img.tone-black { filter: brightness(0); }
   .frow.lim-row > div { padding-left: 0; }
   .lim-legend { margin-left: 0; }
   .lim-chart { height: 170px; }
+}
+
+/* Phone width: in the Opciones tab each label goes above its controls, so the wide
+   choices (Prioridad, Al sembrar) fit. */
+@media (max-width: 560px) {
+  .opt-grid .frow { grid-template-columns: 1fr; }
+  .opt-grid .frow > div { padding-left: 0; padding-top: 6px; }
+  .opt-grid .frow > .fl { padding-top: 0; }
 }

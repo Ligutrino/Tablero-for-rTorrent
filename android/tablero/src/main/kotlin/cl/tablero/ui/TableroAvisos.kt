@@ -154,7 +154,12 @@ class TableroAvisos(
         mirar()
     }
 
-    internal fun salir() = alSalir()
+    /** Salir: cierra Tablero (pantalla y servidor), deja de mirar y detiene el servicio. */
+    internal fun salir() {
+        detener()
+        TableroServidor.salir()
+        alSalir()
+    }
 
     companion object {
         const val CANAL_ESTADO = "tablero-estado"

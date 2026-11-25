@@ -2,8 +2,8 @@
 
 Este paquete es para el proyecto que porta rTorrent a Android y quiere usar **Tablero para rTorrent** como interfaz. Se puede leer sin conocer el proyecto de escritorio.
 
-- Base: Tablero 0.10.1 (escritorio, Linux), con los arreglos para rTorrent 0.16 que salieron al probarlo en Termux y el gráfico de velocidad general en Límites.
-- Esta variante: **0.10.1-android.1**, en `fuente/`. Es una rama aparte: la versión de escritorio no cambia.
+- Base: Tablero 0.11 (escritorio, Linux), con Límites y conexiones generales, con los arreglos para rTorrent 0.16 que salieron al probarlo en Termux y el gráfico de velocidad general en Límites.
+- Esta variante: **0.11-android.1**, en `fuente/`. Es una rama aparte: la versión de escritorio no cambia.
 - `android.patch`: todas las diferencias con la versión de escritorio (5 archivos: tablero.py y web/).
 - `CAMBIOS-ANDROID.md`: qué trae cada versión de la variante. Sirve para llevar los cambios a cada versión nueva de escritorio (`patch -p1 < android.patch` dentro de la carpeta de la versión nueva).
 
@@ -63,7 +63,7 @@ Con `--android` (o la variable de entorno `TABLERO_PLATAFORMA=android`):
 | Carpeta inicial de **Examinar…** y de los **respaldos** (`~`, `~/Respaldos de Tablero`) | El `~` de Termux o de una app es privado: ningún explorador de archivos lo ve. | La de `--archivos`; si no se da, `/storage/emulated/0` cuando se puede leer y escribir ahí. |
 | Ventana GTK, ícono en la bandeja, avisos de escritorio, `.deb`, servicio systemd, `apt install gir1.2-xapp-1.0` | Son de Linux de escritorio. | No se incluyen (la carpeta `packaging/` no está en este paquete). La sección ⚙ Opciones → Ventana solo aparece dentro de la ventana GTK, así que en Android no sale. Ver 6 para el equivalente. |
 
-| Textos que dicen "este equipo", "otro PC", "disco externo" | En Android es un teléfono o una tableta. | Dicen "este teléfono/tableta"; los respaldos hablan de cambiar de teléfono/tableta y de guardar una copia fuera con Exportar. Ejemplos de ruta con `/storage/emulated/0/Download/torrents`. |
+| Textos que dicen "este equipo", "otro PC", "disco externo" | En Android es un teléfono o una tableta. | Dicen "este teléfono/tableta"; los respaldos hablan de cambiar de teléfono/tableta y de guardar una copia fuera con Exportar. Ejemplos de ruta con `/storage/emulated/0/Download/Torrents`. |
 | ⚙ Opciones → Red | El aviso de `--bind` no aplica (los argumentos los pone la app). | Oculto. Se agrega que funciona con wifi y mientras la app está activa. |
 | Estado del puerto → Si está cerrado | Con datos móviles la compañía comparte la IP pública. | Lo explica. |
 | Restaurar respaldo | Un respaldo del PC trae rutas y un rtorrent.rc de PC. | La ayuda da un ejemplo de cambio de rutas de PC a Android; rtorrent.rc viene desmarcado y dice que no se marque si el respaldo viene de un PC. |
@@ -176,7 +176,7 @@ rTorrent 0.16 tiene modo sin interfaz de texto: `system.daemon.set = true` en el
 
 ```
 # rutas: la app las escribe al instalar
-directory.default.set = /storage/emulated/0/Download/torrents
+directory.default.set = /storage/emulated/0/Download/Torrents
 session.path.set      = /data/data/<paquete>/files/rtorrent/session
 # SCGI por socket Unix: ninguna otra app del teléfono puede usarlo (un puerto TCP en 127.0.0.1 sí)
 network.scgi.open_local = /data/data/<paquete>/files/rtorrent/scgi.socket
@@ -208,7 +208,7 @@ class TableroPuente(private val ctx: Context) {
 }
 ```
 
-- `openFolder(path)` recibe una ruta POSIX (`/storage/emulated/0/Download/torrents/Serie`). Android no tiene una forma estándar de "abrir esta carpeta" en cualquier explorador. Opciones: `Intent.ACTION_VIEW` con `DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:Download/torrents/Serie")` y tipo `vnd.android.document/directory` (abre el gestor de archivos del sistema en la mayoría de los teléfonos), o abrir un explorador propio de la app.
+- `openFolder(path)` recibe una ruta POSIX (`/storage/emulated/0/Download/Torrents/Serie`). Android no tiene una forma estándar de "abrir esta carpeta" en cualquier explorador. Opciones: `Intent.ACTION_VIEW` con `DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:Download/Torrents/Serie")` y tipo `vnd.android.document/directory` (abre el gestor de archivos del sistema en la mayoría de los teléfonos), o abrir un explorador propio de la app.
 - Los métodos se llaman en un hilo que no es el de la interfaz: usar `runOnUiThread`/`Handler` para tocar vistas.
 
 En el otro sentido, la app puede llamar a la interfaz:
@@ -232,7 +232,7 @@ En escritorio, la ventana GTK pone un ícono en la bandeja (velocidades, Pausar/
 - Errores: torrents con `status == "error"` (el detalle está en `message`).
 - Íconos: `icono-notificacion/` trae los de la barra de estado para los tres estados (normal, con error, sin conexión), con el color de notificación de cada uno.
 
-Todo eso ya está en `ejemplo-modulo-ui/.../TableroAvisos.kt`: en el servicio, después de `startForeground`, `TableroAvisos(this, ID_NOTIFICACION) { detenerServicio() }.iniciar()`, y `detener()` en `onDestroy`. Mira cada 3 s con la pantalla encendida y cada 30 s apagada. "Descarga completa" sale solo para torrents que estaban bajando (no al agregar uno ya completo ni al verificar datos viejos), igual que en escritorio. Los botones llegan a `TableroAcciones` (receptor en el manifiesto). En Android 13+ `TableroActivity` pide el permiso de notificaciones.
+Todo eso ya está en `ejemplo-modulo-ui/.../TableroAvisos.kt`: en el servicio, después de `startForeground`, `TableroAvisos(this, ID_NOTIFICACION) { detenerServicio() }.iniciar()`, y `detener()` en `onDestroy`. Mira cada 3 s con la pantalla encendida y cada 30 s apagada. "Descarga completa" sale solo para torrents que estaban bajando (no al agregar uno ya completo ni al verificar datos viejos), igual que en escritorio. Los botones llegan a `TableroAcciones` (receptor en el manifiesto). Salir cierra también Tablero con `TableroServidor.salir()` (pantalla, apps recientes y servidor); si la app usa su propia notificación, su Salir debe llamarlo. En Android 13+ `TableroActivity` pide el permiso de notificaciones.
 
 No hay opción de arrancar al encender el teléfono: el teléfono o la tableta casi siempre está encendido.
 
@@ -275,6 +275,7 @@ Todo JSON. Los POST llevan `Content-Type: application/json` y `X-Tablero: 1`. Lo
 | `/api/access` | acceso desde la red, `ip`, `port`, `local`, `platform` |
 | `/api/dirs?path=P` | subcarpetas (para Examinar…) |
 | `/api/free-space?path=P` | `{path, free}` |
+| `/api/general` (GET y POST) | `{general, rtorrent: {max_sockets}, torrent: {peers_max, peers_min, uploads_max}}`: Conexiones y Al sembrar generales (`general.json` en la carpeta de `--config`) |
 | `/api/backups?folder=F` | respaldos existentes y su configuración; `chosen: false` si nadie eligió aún la carpeta |
 | `/api/backup-file?path=P` | el .zip de un respaldo, como descarga (Exportar en un navegador) |
 | `/api/local-ip` | `{ip}` |
@@ -324,7 +325,7 @@ En 0.9.2-android.2, con rTorrent 0.9.8 real y la interfaz en un Pixel 7 emulado 
 - La misma interfaz con mouse en 1280 px: sin botón de menú, atajos visibles, bordes de columna arrastrables con el mouse.
 - `tablero.run(...)`/`stop()` en un hilo, con `--rtorrent-rc`.
 
-En 0.10.1-android.1 se repitieron todas las pruebas de android.2 y android.3 sobre la base 0.10.1, sin errores.
+En 0.10.1-android.3 y android.4 se repitieron de nuevo, y se revisaron Límites y conexiones y la pestaña Opciones a ancho de teléfono. En 0.10.1-android.1 se repitieron todas las pruebas de android.2 y android.3 sobre la base 0.10.1, sin errores.
 
 En 0.9.2-android.3, igual: cada "i" muestra y cierra su texto sin ordenar la columna; tocar otra parte lo cierra; el gráfico de velocidad muestra el punto tocado; dos dedos hacia abajo recargan, un tramo corto no, y un pellizco no. Con mouse en 1280 px no hay ningún "i" y el texto sigue saliendo al pasar el mouse.
 

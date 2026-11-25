@@ -35,10 +35,16 @@ import kotlin.concurrent.thread
  * y letra del tamaño del sistema, y "Guardar como" para exportar respaldos.
  */
 class TableroActivity : Activity() {
-    private companion object {
-        const val REQ_ARCHIVOS = 1
-        const val REQ_NOTIFICACIONES = 2
-        const val REQ_EXPORTAR = 3
+    companion object {
+        private const val REQ_ARCHIVOS = 1
+        private const val REQ_NOTIFICACIONES = 2
+        private const val REQ_EXPORTAR = 3
+        @Volatile private var actual: java.lang.ref.WeakReference<TableroActivity>? = null
+
+        /** Salir: cierra la pantalla de Tablero si está abierta y la quita de las apps recientes. */
+        fun cerrar() {
+            actual?.get()?.let { a -> a.runOnUiThread { a.finishAndRemoveTask() } }
+        }
     }
 
     private lateinit var web: WebView
@@ -53,6 +59,7 @@ class TableroActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(estado: Bundle?) {
         super.onCreate(estado)
+        actual = java.lang.ref.WeakReference(this)
         web = WebView(this)
         // targetSdk 35 dibuja de borde a borde: el marco recibe el espacio de las barras del sistema.
         setContentView(FrameLayout(this).apply { fitsSystemWindows = true; addView(web) })
@@ -105,6 +112,7 @@ class TableroActivity : Activity() {
 
     override fun onDestroy() {
         vivo = false
+        if (actual?.get() === this) actual = null
         web.destroy()
         super.onDestroy()
     }

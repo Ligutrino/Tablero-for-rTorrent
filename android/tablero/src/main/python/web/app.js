@@ -874,13 +874,40 @@ const OPT_HELP = {
 	peers: "Cuántos pares puede tener conectados a la vez este torrent, y cuántos intenta mantener como mínimo.",
 	uploads: "A cuántos pares les envía datos al mismo tiempo. Menos subidas concentran la velocidad en menos pares.",
 	seed: "Tablero detiene el torrent cuando cumple la condición. Funciona mientras Tablero esté corriendo. Si vuelves a iniciarlo a mano, no lo detiene de nuevo hasta que cambies esta regla.",
+	general: "Vacío = el valor general de Límites y conexiones (clic en las velocidades de arriba), que se ve en gris. Un número aquí vale solo para este torrent.",
 };
+
+// Límites y conexiones: totals for all torrents together and the general Al sembrar rule.
+// "rtorrent" holds rTorrent's own totals and "torrent" each torrent's Conexiones from
+// rtorrent.rc, shown where a field is left empty.
+async function loadGeneral() {
+	try { state.general = await api("/api/general"); } catch { /* keep the last one */ }
+	return state.general;
+}
+// A torrent's Conexiones when it has none of its own: the general ones (the minimum is half
+// the maximum), else rTorrent's.
+function generalPeer(k) {
+	const g = state.general;
+	if (!g) return null;
+	const v = k === "peers_min" ? (g.general.peers_max != null ? Math.floor(g.general.peers_max / 2) : null) : g.general[k];
+	return v ?? g.torrent?.[k] ?? null;
+}
+const seedOwn = (o) => ("seed_own" in o ? !!o.seed_own : !!(o.stop_ratio || o.stop_hours));
+function seedRuleText(r) {
+	const parts = [];
+	if (r.stop_ratio) parts.push("al llegar a una proporción de " + r.stop_ratio.toLocaleString("es-CL"));
+	if (r.stop_hours) parts.push(`después de ${r.stop_hours.toLocaleString("es-CL")} horas sembrando`);
+	return parts.length ? "Detener " + parts.join(" o ") : "Sin regla: sigue sembrando";
+}
 
 function optionsHTML(t) {
 	const o = t.opts || {};
 	const kib = (b) => Math.round((b || 0) / KB()), unit = UNITS()[1] + "/s";
 	const help = (k) => `<span class="help" data-tip-title="Ayuda" data-tip="${esc(OPT_HELP[k])}">?</span>`;
 	const num = (id, v, unit, step = 1) => `<label class="num-in"><input type="number" id="${id}" min="0" step="${step}" value="${v}"><span>${unit}</span></label>`;
+	// Empty = the general value, shown as the placeholder.
+	const gnum = (id, v, g) => `<label class="num-in"><input type="number" id="${id}" min="0" step="1" value="${v}" placeholder="${g ?? ""}"><span>pares</span></label>`;
+	const own = seedOwn(o);
 	return `<form id="opt-form" class="form-grid opt-grid" autocomplete="off">
 		<div class="frow"><span class="fl">Prioridad ${help("priority")}</span><div>
 			<span class="seg">${[[3, "Alta"], [2, "Normal"], [1, "Baja"], [0, "Desactivada"]].map(([v, n]) =>
@@ -890,15 +917,22 @@ function optionsHTML(t) {
 			<div><span class="sub-l">Bajada máxima</span>${num("opt-down", kib(o.down_limit), unit)}</div>
 			<div><span class="sub-l">Subida máxima</span>${num("opt-up", kib(o.up_limit), unit)}</div>
 		</div></div>
-		<div class="frow"><span class="fl">Conexiones ${help("peers")}</span><div class="opt-cols">
-			<div><span class="sub-l">Pares máximos</span>${num("opt-pmax", t.peers_max ?? "", "pares")}</div>
-			<div><span class="sub-l">Pares mínimos</span>${num("opt-pmin", t.peers_min ?? "", "pares")}</div>
-			<div><span class="sub-l">Subidas simultáneas ${help("uploads")}</span>${num("opt-umax", t.uploads_max ?? "", "pares")}</div>
+		<div class="frow"><span class="fl">Conexiones ${help("peers")}</span><div>
+			<div class="opt-cols">
+				${[["opt-pmax", "peers_max", "Pares máximos"], ["opt-pmin", "peers_min", "Pares mínimos"], ["opt-umax", "uploads_max", `Subidas simultáneas ${help("uploads")}`]].map(([id, k, label]) =>
+					`<div><span class="sub-l">${label}</span>${gnum(id, k in o ? o[k] : "", generalPeer(k))}</div>`).join("")}
+			</div>
+			<div class="opt-general">${toolBtn("rotate-ccw", "Usar general", 'id="opt-peers-general"')}<span class="hint">${esc(OPT_HELP.general)}</span></div>
 		</div></div>
 		<div class="frow"><span class="fl">Al sembrar ${help("seed")}</span><div class="opt-rules">
-			<label class="check"><input type="checkbox" id="opt-r-on"${o.stop_ratio ? " checked" : ""}> Detener al llegar a una proporción de subida de ${num("opt-ratio", o.stop_ratio || 2, "", 0.1)}</label>
-			<label class="check"><input type="checkbox" id="opt-h-on"${o.stop_hours ? " checked" : ""}> Detener después de ${num("opt-hours", o.stop_hours || 24, "horas sembrando", 0.5)}</label>
-			${o.rule_done ? '<div class="hint">Este torrent ya se detuvo una vez por esta regla.</div>' : ""}
+			<span class="seg">${[[0, "General"], [1, "Propia de este torrent"]].map(([v, n]) =>
+				`<label><input type="radio" name="opt-seed" value="${v}"${+own === v ? " checked" : ""}><span>${n}</span></label>`).join("")}</span>
+			<div id="opt-seed-general" class="hint"${own ? " hidden" : ""}>${esc(seedRuleText(state.general?.general || {}))}. Se cambia en Límites y conexiones.</div>
+			<div id="opt-seed-own"${own ? "" : " hidden"}>
+			<label class="check"><input type="checkbox" id="opt-r-on"${own && o.stop_ratio ? " checked" : ""}> Detener al llegar a una proporción de subida de ${num("opt-ratio", (own && o.stop_ratio) || 2, "", 0.1)}</label>
+			<label class="check"><input type="checkbox" id="opt-h-on"${own && o.stop_hours ? " checked" : ""}> Detener después de ${num("opt-hours", (own && o.stop_hours) || 24, "horas sembrando", 0.5)}</label>
+			</div>
+			${o.rule_done ? '<div class="hint">Este torrent ya se detuvo una vez por su regla de siembra.</div>' : ""}
 		</div></div>
 		<div class="opt-foot"><span id="opt-status" class="dimtxt"></span><span class="spacer"></span>
 			<button type="button" class="btn" id="opt-reset">Deshacer cambios</button>
@@ -908,14 +942,21 @@ function optionsHTML(t) {
 
 async function saveOptions(t) {
 	const v = (id) => +$("#" + id).value || 0;
+	const own = (id) => ($("#" + id).value.trim() === "" ? null : Math.max(0, Math.round(+$("#" + id).value || 0)));
+	const seed = $('input[name="opt-seed"]:checked')?.value === "1";
 	const options = {
 		priority: +($('input[name="opt-prio"]:checked')?.value ?? t.priority),
 		down_limit: v("opt-down") * KB(), up_limit: v("opt-up") * KB(),
-		peers_max: v("opt-pmax"), peers_min: v("opt-pmin"), uploads_max: v("opt-umax"),
-		stop_ratio: $("#opt-r-on").checked ? v("opt-ratio") : 0,
-		stop_hours: $("#opt-h-on").checked ? v("opt-hours") : 0,
+		peers_max: own("opt-pmax"), peers_min: own("opt-pmin"), uploads_max: own("opt-umax"),
+		seed_own: seed,
+		stop_ratio: seed && $("#opt-r-on").checked ? v("opt-ratio") : 0,
+		stop_hours: seed && $("#opt-h-on").checked ? v("opt-hours") : 0,
 	};
-	if (options.peers_min > options.peers_max) return toast("Los pares mínimos no pueden superar a los máximos", true);
+	// Checked with what the torrent will have, its own value or the general one.
+	const eff = (k) => options[k] ?? generalPeer(k);
+	if (eff("peers_min") != null && eff("peers_max") != null && eff("peers_min") > eff("peers_max") &&
+		(options.peers_min != null || options.peers_max != null))
+		return toast("Los pares mínimos no pueden superar a los máximos", true);
 	$("#opt-status").textContent = "Aplicando…";
 	try {
 		await api("/api/options", { hash: t.hash, options });
@@ -2115,7 +2156,7 @@ function addTrackerDialog(t) {
 
 // A folder field with a browser of the folders on the computer running Tablero.
 function folderPicker(id, value) {
-	return `<div class="fp"><div class="row"><input type="text" id="${id}" value="${esc(value || "")}" placeholder="${isAndroid() ? "/storage/emulated/0/Download/torrents" : "/ruta/a/la/carpeta"}" style="flex:1">` +
+	return `<div class="fp"><div class="row"><input type="text" id="${id}" value="${esc(value || "")}" placeholder="${isAndroid() ? "/storage/emulated/0/Download/Torrents" : "/ruta/a/la/carpeta"}" style="flex:1">` +
 		`<button type="button" class="btn" data-fp-browse="${id}">Examinar…</button></div><div class="fp-panel" data-fp-for="${id}" hidden></div></div>`;
 }
 // Puts a path in the field scrolled to its end, where the folder's own name is.
@@ -2275,18 +2316,44 @@ function reportJobs() {
 	}
 }
 
-function limitsDialog() {
-	const s = state.stats;
+async function limitsDialog() {
+	const s = state.stats, g = (await loadGeneral()) || { general: {}, rtorrent: {}, torrent: {} }, gen = g.general;
 	const num = (id, v) => `<span class="num-in"><input type="number" id="${id}" min="0" value="${Math.round((v || 0) / KB())}"> ${UNITS()[1]}/s</span>`;
-	const m = modal("Límites de velocidad", form(
+	// Empty = rTorrent's own value (rtorrent.rc), shown as the placeholder.
+	const pnum = (id, k, unit, from) => `<span class="num-in"><input type="number" id="${id}" min="0" step="1" value="${gen[k] ?? ""}" placeholder="${from[k] ?? ""}"> ${unit}</span>`;
+	const snum = (id, v, step) => `<span class="num-in"><input type="number" id="${id}" min="0" step="${step}" value="${v}"></span>`;
+	const m = modal("Límites y conexiones", form(
 		frow("Velocidad", `<div class="lim-tools">${seg("range", SPEED_RANGES, prefs.speedRange)}<span class="lim-legend"></span></div>` +
 			'<div class="lim-chart"><div class="placeholder">Juntando datos…</div></div>' +
 			'<div class="hint">Bajada y subida de todos los torrents juntos; las líneas cortadas son los límites actuales. Cada torrent tiene su propio gráfico en la pestaña Velocidad.</div>'),
 		frow("Bajada máxima", num("lim-down", s.down_limit), "lim-down"),
-		frow("Subida máxima", num("lim-up", s.up_limit) + '<div class="hint">0 = sin límite. Se aplica a todos los torrents juntos; cada torrent puede tener su propio límite en la pestaña Opciones.</div>', "lim-up")),
+		frow("Subida máxima", num("lim-up", s.up_limit) + '<div class="hint">0 = sin límite. Se aplica a todos los torrents juntos; cada torrent puede tener su propio límite en la pestaña Opciones.</div>', "lim-up"),
+		frow("Conexiones", `<div class="opt-cols">
+			<div><span class="sub-l">En total</span>${pnum("lim-sockets", "max_sockets", "conexiones", g.rtorrent)}</div>
+			<div><span class="sub-l">Pares por torrent</span>${pnum("lim-pmax", "peers_max", "pares", g.torrent)}</div>
+			<div><span class="sub-l">Subidas por torrent</span>${pnum("lim-umax", "uploads_max", "pares", g.torrent)}</div></div>` +
+			'<div class="hint">"En total" es para todos los torrents juntos y evita que muchas conexiones llenen el router y pongan lento el internet del resto de la casa. Pares y subidas por torrent valen para cada torrent sin valores propios en su pestaña Opciones; el mínimo de pares es la mitad. Vienen con los valores de BiglyBT (250, 50 y 4). Vacío = lo que diga rTorrent, en gris.</div>'),
+		frow("Al sembrar", `<div class="opt-rules">
+			<label class="check"><input type="checkbox" id="lim-r-on"${gen.stop_ratio ? " checked" : ""}> Detener al llegar a una proporción de subida de ${snum("lim-ratio", gen.stop_ratio || 2, 0.1)}</label>
+			<label class="check"><input type="checkbox" id="lim-h-on"${gen.stop_hours ? " checked" : ""}> Detener después de ${snum("lim-hours", gen.stop_hours || 24, 0.5)} horas sembrando</label></div>` +
+			'<div class="hint">Tablero detiene cada torrent completo que cumpla la condición, salvo los que tienen su propia regla en la pestaña Opciones. Funciona mientras Tablero esté corriendo.</div>')),
 		[{ label: "Cancelar" }, {
 			label: "Aplicar", cls: "primary",
-			run: () => act("/api/limits", { down: +$("#lim-down", m).value * KB(), up: +$("#lim-up", m).value * KB() }, "Límites aplicados"),
+			run: async () => {
+				const peer = (id) => ($("#" + id, m).value.trim() === "" ? null : Math.max(0, Math.round(+$("#" + id, m).value || 0)));
+				const general = {
+					max_sockets: peer("lim-sockets"), peers_max: peer("lim-pmax"), uploads_max: peer("lim-umax"),
+					stop_ratio: $("#lim-r-on", m).checked ? +$("#lim-ratio", m).value || 0 : 0,
+					stop_hours: $("#lim-h-on", m).checked ? +$("#lim-hours", m).value || 0 : 0,
+				};
+				try {
+					await api("/api/limits", { down: +$("#lim-down", m).value * KB(), up: +$("#lim-up", m).value * KB() });
+					state.general = await api("/api/general", general);
+					state.optsHash = null;
+					toast("Límites y conexiones aplicados");
+					refresh();
+				} catch (e) { toast(e.message, true); return false; }
+			},
 		}], "wide limits");
 	$(".lim-chart", m).closest(".frow").classList.add("lim-row");
 	m.addEventListener("click", (e) => {
@@ -2582,8 +2649,8 @@ async function restoreDialog(path) {
 		frow("Respaldo", `<div class="cur-loc">${esc(path.split("/").pop())}</div><div class="hint">Creado el ${esc(created)} en el equipo <b>${esc(info.host || "?")}</b> con Tablero ${esc(info.version || "")}: ${info.torrents} torrents.</div>`),
 		frow("Qué restaurar", `<div class="opt-rules">${parts.map(([k, label, on, avail]) =>
 			`<label class="check"><input type="checkbox" data-part="${k}"${on && avail ? " checked" : ""}${avail ? "" : " disabled"}> ${label}</label>`).join("")}</div>`),
-		frow("Carpetas", `<div class="rs-map"><span>Cambiar</span><input type="text" id="rs-from" placeholder="/ruta/en/el/respaldo" spellcheck="false"><span>por</span><input type="text" id="rs-to" placeholder="${isAndroid() ? "/storage/emulated/0/Download/torrents" : "/ruta/en/este/equipo"}" spellcheck="false"></div>` +
-			'<div id="rs-folders"></div><div class="hint">' + (isAndroid() ? "Si el respaldo viene de un PC, cambia el comienzo de las rutas, por ejemplo /media/datos/Torrents por /storage/emulated/0/Download/torrents. " :
+		frow("Carpetas", `<div class="rs-map"><span>Cambiar</span><input type="text" id="rs-from" placeholder="/ruta/en/el/respaldo" spellcheck="false"><span>por</span><input type="text" id="rs-to" placeholder="${isAndroid() ? "/storage/emulated/0/Download/Torrents" : "/ruta/en/este/equipo"}" spellcheck="false"></div>` +
+			'<div id="rs-folders"></div><div class="hint">' + (isAndroid() ? "Si el respaldo viene de un PC, cambia el comienzo de las rutas, por ejemplo /media/datos/Torrents por /storage/emulated/0/Download/Torrents. " :
 				"Si en este equipo los discos están montados en otro lugar, cambia el comienzo de las rutas. ") + mark("good") + ' = los datos están ahí.</div>')),
 		[{ label: "Cancelar" }, {
 			label: "Restaurar", cls: "primary",
@@ -2970,6 +3037,12 @@ function wire() {
 		if (f) { tableFilter[f.dataset.tfilter] = f.value; renderDetails(); }
 	});
 	$("#details-body").addEventListener("change", (e) => {
+		if (e.target.name === "opt-seed") {
+			const own = e.target.value === "1";
+			$("#opt-seed-own").hidden = !own;
+			$("#opt-seed-general").hidden = own;
+			return;
+		}
 		const h = detailHash();
 		const opt = e.target.closest("input[data-opt]");
 		if (opt) { prefs[opt.dataset.opt] = opt.checked; savePrefs(); return renderDetails(); }
@@ -3046,6 +3119,7 @@ function wire() {
 	});
 	$("#details-body").addEventListener("click", (e) => {
 		if (e.target.closest("#opt-reset")) { state.optsHash = null; return renderDetails(); }
+		if (e.target.closest("#opt-peers-general")) { ["opt-pmax", "opt-pmin", "opt-umax"].forEach((id) => ($("#" + id).value = "")); return; }
 		const th = e.target.closest("[data-tsort]");
 		if (th) { if (!e.target.closest(".grip") && !state.resized) nextSort(th.dataset.tsort, th.dataset.col); return renderDetails(); }
 		const tr0 = e.target.closest("[data-treset]");
@@ -3249,6 +3323,7 @@ if (window.ResizeObserver) {
 	}
 	wire();
 	try { state.tagConf = await api("/api/tags"); } catch { /* keep defaults */ }
+	loadGeneral();
 	render();
 	refresh();
 	setTimeout(firstBackupFolder, 1500);
