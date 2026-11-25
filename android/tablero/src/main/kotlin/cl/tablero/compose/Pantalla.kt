@@ -147,22 +147,39 @@ private fun BarraSuperior(estado: Estado) {
         IconButton(onClick = { estado.cajon = true }) { Icono("menu", size = 22.dp, desc = "Filtros") }
     }, title = {
         // Tocar las velocidades abre Límites y conexiones, como en la barra de estado de la web.
-        Column(Modifier.clickable { estado.dialogo = Dialogo.Limites }) {
-            Text("Tablero", fontSize = 18.sp, fontWeight = FontWeight.Medium)
-            Velocidades(estado)
-        }
+        Velocidades(estado, Modifier.clickable { estado.dialogo = Dialogo.Limites })
     }, actions = {
-        IconButton(onClick = { estado.buscando = true }) { Icono("search", size = 22.dp, desc = "Buscar") }
+        // De izquierda a derecha: buscar, ordenar, límites, opciones, puerto y encendido (este queda en la esquina).
+        BotonBarra("search", "Buscar") { estado.buscando = true }
         Box {
-            IconButton(onClick = { estado.menu = "orden" }) { Icono("arrow-up-down", size = 22.dp, desc = "Ordenar") }
+            BotonBarra("arrow-up-down", "Ordenar") { estado.menu = "orden" }
             MenuOrden(estado)
         }
+        BotonBarra("gauge", "Límites y conexiones") { estado.dialogo = Dialogo.Limites }
+        BotonBarra("settings", "Opciones") { estado.dialogo = Dialogo.Opciones }
+        BotonPuerto(estado)
         BotonEncendido(estado)
-        Box {
-            IconButton(onClick = { estado.menu = "tablero" }) { Icono("settings", size = 22.dp, desc = "Opciones") }
-            MenuTablero(estado)
-        }
     })
+}
+
+/** Botón de la barra superior: 40 dp en vez de 48 para que entren seis junto a las velocidades. */
+@Composable
+private fun BotonBarra(icon: String, desc: String, tint: Color = Color.Unspecified, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
+        if (tint == Color.Unspecified) Icono(icon, size = 22.dp, desc = desc) else Icono(icon, size = 22.dp, tint = tint, desc = desc)
+    }
+}
+
+/** El puerto de escucha, del color de su estado (abierto, cerrado, probando); abre el diálogo del puerto. */
+@Composable
+private fun BotonPuerto(estado: Estado) {
+    val c = LocalColores.current
+    val s = estado.stats
+    if (s.port <= 0) return
+    val (cls, text) = estado.portState()
+    val next = estado.portNext()
+    BotonBarra("ethernet-port", "Puerto ${s.port}: $text" + if (next != 0L) " · $next al reiniciar rTorrent" else "",
+        tint = when (cls) { "good" -> c.good; "bad" -> c.bad; "warn" -> c.warn; else -> c.dim }) { estado.dialogo = Dialogo.Puerto }
 }
 
 /**
@@ -174,48 +191,24 @@ private fun BotonEncendido(estado: Estado) {
     val c = LocalColores.current
     val on = estado.conectado == true
     val off = estado.sinRtorrent
-    IconButton(onClick = {
+    BotonBarra("power", if (on) "rTorrent encendido: tocar para apagarlo" else "rTorrent apagado: tocar para encenderlo",
+        tint = if (on) c.good else if (off) c.bad else c.dim) {
         when {
             on -> estado.dialogo = Dialogo.Apagar
             else -> { estado.plataforma.encenderRtorrent(); estado.aviso("Encendiendo rTorrent…"); estado.launch { kotlinx.coroutines.delay(2500); estado.refresh() } }
-        }
-    }) {
-        Icono("power", size = 22.dp, tint = if (on) c.good else if (off) c.bad else c.dim,
-            desc = if (on) "rTorrent encendido: tocar para apagarlo" else "rTorrent apagado: tocar para encenderlo")
-    }
-}
-
-/** El engranaje: Límites y conexiones, el puerto y Opciones (donde está también Respaldo y restauración). */
-@Composable
-private fun MenuTablero(estado: Estado) {
-    val c = LocalColores.current
-    DropdownMenu(expanded = estado.menu == "tablero", onDismissRequest = { estado.menu = null }, containerColor = c.panel2) {
-        @Composable fun item(icon: String, label: String, tint: Color = c.text, d: Dialogo) =
-            DropdownMenuItem(text = { Text(label) }, leadingIcon = { Icono(icon, size = 16.dp, tint = tint) }, onClick = { estado.menu = null; estado.dialogo = d })
-        item("gauge", "Límites y conexiones", d = Dialogo.Limites)
-        val s = estado.stats
-        if (s.port > 0) {
-            val (cls, text) = estado.portState()
-            val next = estado.portNext()
-            item("circle", "Puerto ${s.port}: $text" + if (next != 0L) " · $next al reiniciar rTorrent" else "",
-                tint = when (cls) { "good" -> c.good; "bad" -> c.bad; "warn" -> c.warn; else -> c.dim }, d = Dialogo.Puerto)
-        }
-        item("settings", "Opciones", d = Dialogo.Opciones)
-        if (estado.version.isNotEmpty()) {
-            HorizontalDivider(color = c.line)
-            Text("Tablero ${estado.version}", fontSize = 11.sp, color = c.dim, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         }
     }
 }
 
 /** Bajada y subida de rTorrent entero (la barra de estado de la web); ⁽ˡ⁾ cuando hay límite. */
 @Composable
-private fun Velocidades(estado: Estado) {
+private fun Velocidades(estado: Estado, modifier: Modifier = Modifier) {
     val c = LocalColores.current
     val s = estado.stats
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("↓ " + (if (s.downRate > 0) Formato.size(s.downRate) else "0 B") + "/s" + (if (s.downLimit > 0) " ⁽ˡ⁾" else ""), fontSize = 12.sp, color = c.down)
-        Text("↑ " + (if (s.upRate > 0) Formato.size(s.upRate) else "0 B") + "/s" + (if (s.upLimit > 0) " ⁽ˡ⁾" else ""), fontSize = 12.sp, color = c.up)
+    // Una sobre otra: con seis botones a la derecha no cabe más que esto.
+    Column(modifier) {
+        Text("↓ " + (if (s.downRate > 0) Formato.size(s.downRate) else "0 B") + "/s" + (if (s.downLimit > 0) " ⁽ˡ⁾" else ""), fontSize = 13.sp, color = c.down, maxLines = 1)
+        Text("↑ " + (if (s.upRate > 0) Formato.size(s.upRate) else "0 B") + "/s" + (if (s.upLimit > 0) " ⁽ˡ⁾" else ""), fontSize = 13.sp, color = c.up, maxLines = 1)
     }
 }
 

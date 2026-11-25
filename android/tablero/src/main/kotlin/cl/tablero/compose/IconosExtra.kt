@@ -11,5 +11,6 @@ internal val LUCIDE_EXTRA: Map<String, List<String>> = mapOf(
     "chevron-down" to listOf("m6 9 6 6 6-6"),
     "chevron-right" to listOf("m9 18 6-6-6-6"),
     "arrow-left" to listOf("m12 19-7-7 7-7", "M19 12H5"),
+    "ethernet-port" to listOf("m15 20 3-3h2a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2l3 3z", "M6 8v1", "M10 8v1", "M14 8v1", "M18 8v1"),
     "columns-3" to listOf("M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z", "M9 3v18", "M15 3v18"),
 )

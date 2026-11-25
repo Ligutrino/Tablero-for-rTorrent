@@ -58,8 +58,8 @@ Todo está (✓), en tres rondas:
   revisado y reducido si pesa más de 900 KB), apariencia por lugar con vista previa; subir, bajar y eliminar
   etiquetas; agregar o quitar de los elegidos. Se abre con toque largo en la barra lateral, o con + para una nueva.
 - ✓ Límites y conexiones (con gráfico), puerto (estado, probar, cambiar). Se abren tocando las velocidades de arriba
-  y desde el menú del engranaje.
-- ✓ Opciones (menú del engranaje): tema, tinte, barra de etiquetas, coincide, unidades, intervalo, respaldo,
+  y con sus botones de la barra superior.
+- ✓ Opciones (engranaje de la barra superior): tema, tinte, barra de etiquetas, coincide, unidades, intervalo, respaldo,
   acceso desde la red, importar colores de ruTorrent. Apagar y encender rTorrent: el botón de encendido de arriba
   (verde encendido, rojo apagado; apagar pide confirmar).
 - ✓ Respaldo y restauración (crear, programar, exportar, importar, restaurar con cambio de carpetas), primer respaldo.

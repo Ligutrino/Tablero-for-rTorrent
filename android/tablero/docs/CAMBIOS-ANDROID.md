@@ -1,5 +1,11 @@
 # Cambios de la variante Android
 
+## 0.11-android.7-kotlin (25-11-2026, rama `kotlin`)
+
+- Sin menú del engranaje: la barra superior lleva, de derecha a izquierda, encendido de rTorrent, puerto (del color de
+  su estado), Opciones, Límites y conexiones, Ordenar y Buscar. Las velocidades quedan una sobre otra a la izquierda
+  (siguen abriendo Límites) y la versión de Tablero se ve al pie de Opciones.
+
 ## 0.11-android.6-kotlin (25-11-2026, rama `kotlin`)
 
 - Se quita la sección Tablero de la barra lateral. Arriba a la derecha quedan el botón de encendido de rTorrent (verde

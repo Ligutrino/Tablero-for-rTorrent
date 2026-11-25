@@ -339,5 +339,6 @@ fun OpcionesDialogo(estado: Estado) {
                 placeholder = { Text("{\"Películas\":{\"color\":\"#e53935\",\"icon\":\"🎬\"}}", color = c.dim) })
             Hint("Colores del plugin labelcolors de ruTorrent: pega el valor de webui.labelcolors.map.")
         }
+        if (estado.version.isNotEmpty()) Text("Tablero ${estado.version}", fontSize = 11.sp, color = c.dim)
     }
 }
