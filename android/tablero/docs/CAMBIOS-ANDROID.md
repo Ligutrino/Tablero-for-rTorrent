@@ -1,5 +1,10 @@
 # Cambios de la variante Android
 
+## 0.11-android.21-kotlin (25-11-2026, rama `kotlin`)
+
+- Diálogos: el espacio de las barras del sistema se mide en la ventana principal (LocalBarras) y se pasa a Ventana. Dentro
+  del Dialog, WindowInsets llega en cero y la tarjeta quedaba bajo la barra de navegación (visto en tableta).
+
 ## 0.11-android.20-kotlin (25-11-2026, rama `kotlin`)
 
 - Ordenar la lista pasa de menú a diálogo, con el mismo estilo que Opciones: radios en dos columnas para el dato, Sentido

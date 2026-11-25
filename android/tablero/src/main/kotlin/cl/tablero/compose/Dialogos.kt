@@ -115,7 +115,7 @@ fun Ventana(
     // de estado). Tocar fuera de la tarjeta cierra, como en AlertDialog.
     Dialog(onDismissRequest = cerrar, properties = estado.plataforma.propiedadesDialogo) {
         Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null, onClick = cerrar)
-            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.systemBars)
+            .padding(LocalBarras.current)
             .padding(horizontal = 16.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
             Surface(Modifier.widthIn(max = 560.dp).fillMaxWidth().clickable(remember { MutableInteractionSource() }, null) {},
                 shape = AlertDialogDefaults.shape, color = AlertDialogDefaults.containerColor, tonalElevation = AlertDialogDefaults.TonalElevation) {
