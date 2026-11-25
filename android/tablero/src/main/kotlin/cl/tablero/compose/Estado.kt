@@ -176,6 +176,11 @@ class Estado(val api: Api, val plataforma: Plataforma, private val scope: Corout
     /** El texto de "Filtrar…" de cada tabla del detalle (files, peers, trackers); dura lo que la app abierta. */
     val tableFilter = mutableStateMapOf<String, String>()
 
+    /** La última prueba del puerto desde internet (/api/port-test), y el puerto que se está probando. */
+    var portTest by mutableStateOf<Map<String, Any?>?>(null); private set
+    var portTesting by mutableStateOf(0L); private set
+    private var portAuto = 0L
+
     /** Avisos breves (los toast de la web); la pantalla los muestra de a uno. */
     val avisos = Channel<Aviso>(Channel.BUFFERED)
 
@@ -190,6 +195,7 @@ class Estado(val api: Api, val plataforma: Plataforma, private val scope: Corout
             try { prefs = Prefs.from(asMap(api.get("/api/prefs")["prefs"])); Formato.decimal = prefs.units == "dec" } catch (e: Exception) { /* las de siempre */ }
             try { tagConf = TagConf.from(api.get("/api/tags")) } catch (e: Exception) { /* sin etiquetas configuradas */ }
             loadGeneral()
+            if (plataforma.primerRespaldo) launch { delay(1500); primerRespaldo() }
             while (true) {
                 refreshOnce()
                 delay(maxOf(1, prefs.interval) * 1000L)
@@ -230,6 +236,7 @@ class Estado(val api: Api, val plataforma: Plataforma, private val scope: Corout
             sel = sel.filterTo(LinkedHashSet()) { it in byHash }
             if (detalle != null && detalle !in byHash) detalle = null
             reportJobs(list)
+            autoPortTest()
             loadDetalle()
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
@@ -266,6 +273,50 @@ class Estado(val api: Api, val plataforma: Plataforma, private val scope: Corout
     fun marcarPrioridad(indexes: List<Int>, p: Int) {
         val d = details ?: return
         details = d.copy(files = d.files.mapIndexed { i, f -> if (i in indexes) f.copy(priority = p) else f })
+    }
+
+    /** Al iniciar, y si rTorrent vuelve en otro puerto, el puerto se prueba una vez solo (autoPortTest de la web). */
+    private fun autoPortTest() {
+        val s = stats
+        if (!s.portOpen || s.port == 0L || portAuto == s.port) return
+        portAuto = s.port; portTesting = s.port
+        scope.launch { try { probarPuerto() } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e } finally { portTesting = 0 } }
+    }
+
+    suspend fun probarPuerto(): Map<String, Any?> = api.post("/api/port-test").also { portTest = it }
+
+    /** portState de la web: (clase, texto) del puerto de entrada. */
+    fun portState(): Pair<String, String> {
+        val s = stats
+        val t = portTest
+        return when {
+            !s.portOpen -> "bad" to "rTorrent no escucha conexiones entrantes"
+            t != null && lng(t["port"]) == s.port -> if (bool(t["reachable"])) "good" to "abierto (probado)" else "bad" to "cerrado (probado)"
+            portTesting == s.port -> "" to "probando…"
+            s.incoming > 0 || (s.incomingSeen > 0 && System.currentTimeMillis() / 1000 - s.incomingSeen < 1800) -> "good" to "abierto"
+            else -> "warn" to "sin conexiones entrantes"
+        }
+    }
+
+    /** El puerto guardado para el próximo inicio de rTorrent, si es otro que el de ahora; 0 si no. */
+    fun portNext(): Long = stats.portNext.takeIf { it != 0L && it != stats.port } ?: 0L
+
+    /** Después de restaurar un respaldo: preferencias, etiquetas y conexiones otra vez desde el servidor. */
+    fun recargarTodo() {
+        scope.launch {
+            try { prefs = Prefs.from(asMap(api.get("/api/prefs")["prefs"])); Formato.decimal = prefs.units == "dec" } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e }
+            try { tagConf = TagConf.from(api.get("/api/tags")) } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e }
+            loadGeneral()
+            refreshOnce()
+        }
+    }
+
+    /** firstBackupFolder de la web: la primera vez, dónde guardar los respaldos. */
+    private suspend fun primerRespaldo() {
+        if (prefs.backupAsked || dialogo != null) return
+        val info = try { api.get("/api/backups") } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; return }
+        if (bool(info["chosen"])) { updatePrefs { it.copy(backupAsked = true) }; return }
+        if (dialogo == null) dialogo = Dialogo.PrimerRespaldo(info)
     }
 
     private fun reportJobs(list: List<Torrent>) {
@@ -327,6 +378,9 @@ class Estado(val api: Api, val plataforma: Plataforma, private val scope: Corout
     }
 
     fun tagRank(name: String): Int = allTags().indexOf(name).let { if (it < 0) 1_000_000 else it }
+
+    /** saveTagConf de la web, esperando la respuesta (los diálogos). */
+    suspend fun guardarEtiquetas(c: TagConf) { tagConf = TagConf.from(api.post("/api/tags", c.toObj())) }
 
     fun saveTagConf(c: TagConf, then: () -> Unit = {}) {
         scope.launch {

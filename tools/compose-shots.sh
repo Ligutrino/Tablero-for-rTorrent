@@ -31,4 +31,4 @@ for _ in $(seq 50); do curl -s -o /dev/null http://127.0.0.1:18092/api/access &&
 python3 "$ROOT/tools/compose-demo.py" http://127.0.0.1:18092 "$W/dl"
 sleep 3
 kill $TB; wait $TB 2>/dev/null || true
-"$UI" --shots "$OUT" ${ESC:+--escena "$ESC"} --scgi "$W/base/rpc.sock" --web "$WEB" --config "$W/cfg" --archivos "$W/dl" --port 18093
+"$UI" --shots "$OUT" ${ESC:+--escena "$ESC"} --scgi "$W/base/rpc.sock" --web "$WEB" --config "$W/cfg" --archivos "$W/dl" --port 18093 ${UI_ARGS:-}

@@ -6,6 +6,7 @@ import cl.tablero.backend.DirWebRoot
 import cl.tablero.backend.Options
 import cl.tablero.backend.Tablero
 import cl.tablero.compose.Api
+import cl.tablero.compose.ArchivoLocal
 import cl.tablero.compose.Dialogo
 import cl.tablero.compose.Estado
 import cl.tablero.compose.Plataforma
@@ -30,6 +31,17 @@ class Escritorio : Plataforma {
     override fun reproducir(url: String, nombre: String) { pedidos.add("reproducir $url") }
     override fun exportar(path: String) { pedidos.add("exportar $path") }
     override fun elegirCarpeta(listo: (String?) -> Unit) { listo(null) }
+    override val tieneSelectorCarpetas: Boolean get() = true
+    override val primerRespaldo: Boolean get() = false
+    /** Lo que "elige" el selector de archivos en las pruebas. */
+    var elegibles: List<ArchivoLocal> = emptyList()
+    override fun elegirArchivos(tipos: List<String>, varios: Boolean, listo: (List<ArchivoLocal>) -> Unit) { listo(elegibles) }
+    override fun reducirImagen(bytes: ByteArray, w: Int, h: Int): ByteArray? = try {
+        val src = Image.makeFromEncoded(bytes)
+        val surf = org.jetbrains.skia.Surface.makeRasterN32Premul(w, h)
+        surf.canvas.drawImageRect(src, org.jetbrains.skia.Rect.makeWH(w.toFloat(), h.toFloat()))
+        surf.makeImageSnapshot().encodeToData(EncodedImageFormat.PNG)!!.bytes
+    } catch (e: Exception) { null }
     override fun imagen(bytes: ByteArray): ImageBitmap? =
         try { Image.makeFromEncoded(bytes).toComposeImageBitmap() } catch (e: Exception) { null }
 }
@@ -84,6 +96,32 @@ fun probar(e: Estado) {
     espera("historia de velocidad") { e.history?.key == f.hash }
     e.detalle = null
     e.updatePrefs { it.copy(tab = "general") }
+    // Ronda 3.
+    runBlocking {
+        val nuevo = File(File(archivos).parentFile, "patagonia.torrent").path
+        val info = e.api.post("/api/torrent-info", mapOf("path" to nuevo))
+        check("leer un .torrent", cl.tablero.compose.listOfAny(info["files"]).size == 5)
+        check("espacio libre", lng(e.api.get("/api/free-space", mapOf("path" to archivos))["free"]) > 0)
+        check("carpetas (Examinar)", cl.tablero.compose.listOfAny(e.api.get("/api/dirs", mapOf("path" to archivos))["dirs"]).isNotEmpty())
+        e.api.post("/api/limits", mapOf("down" to 500 * 1024L, "up" to 0L))
+        e.api.post("/api/general", mapOf("max_sockets" to 600L, "peers_max" to 60L, "uploads_max" to null, "stop_ratio" to 0.0, "stop_hours" to 0.0))
+        check("conexiones generales", e.loadGeneral()?.general?.get("peers_max")?.let { lng(it) } == 60L)
+        e.guardarEtiquetas(e.tagConf.copy(tags = e.tagConf.tags + ("Prueba" to cl.tablero.compose.TagEntry(color = "#123456", icon = "lucide:star"))))
+        check("etiqueta nueva", e.tagConf.tags["Prueba"]?.color == "#123456")
+        e.guardarEtiquetas(e.tagConf.copy(tags = e.tagConf.tags - "Prueba"))
+        check("eliminar etiqueta", "Prueba" !in e.tagConf.tags)
+        val bk = File(File(archivos).parentFile, "respaldos").apply { mkdirs() }.path
+        val r = e.api.post("/api/backup", mapOf("folder" to bk))
+        check("crear respaldo", File(cl.tablero.compose.str(r["path"])).isFile)
+        val ins = e.api.post("/api/restore-inspect", mapOf("path" to cl.tablero.compose.str(r["path"])))
+        check("revisar respaldo", lng(ins["torrents"]) == e.torrents.size.toLong())
+        val imp = e.api.importarRespaldo(cl.tablero.compose.str(r["path"]), bk, "copia.zip")
+        check("importar respaldo", File(cl.tablero.compose.str(imp["path"])).isFile)
+    }
+    espera("límite de bajada") { e.stats.downLimit == 500 * 1024L }
+    val tos = e.torrents.first { it.name.startsWith("Tears of Steel") }
+    e.act("/api/rename-folder", mapOf("hash" to tos.hash, "name" to "Tears of Steel T1"))
+    espera("renombrar carpeta") { e.byHash[tos.hash]?.directory?.endsWith("Tears of Steel T1") == true }
     val n = e.torrents.size
     e.act("/api/add", mapOf("magnet" to "magnet:?xt=urn:btih:" + "d".repeat(40), "directory" to "", "tags" to listOf("Linux"), "start" to false))
     espera("agregar magnet") { e.torrents.size == n + 1 }
@@ -93,6 +131,9 @@ fun probar(e: Estado) {
     println(if (fallas == 0) "TODO OK" else "$fallas FALLAS")
 }
 var fallas = 0
+
+fun check(que: String, ok: Boolean) { println((if (ok) "ok   " else "FALLA") + " " + que); if (!ok) fallas++ }
+lateinit var archivos: String
 
 fun Estado.loadDetalleSync() = runBlocking { loadDetalle() }
 
@@ -114,6 +155,7 @@ fun main(args: Array<String>) {
         userFiles = a["--archivos"],
     ))
     thread(isDaemon = true) { tablero.run() }
+    archivos = a["--archivos"] ?: error("falta --archivos")
     val plataforma = Escritorio()
     val estado = Estado(Api(tablero), plataforma, CoroutineScope(SupervisorJob() + Dispatchers.Default))
     estado.start()
@@ -135,7 +177,7 @@ fun main(args: Array<String>) {
     while (estado.conectado == null && waited < 100) { Thread.sleep(100); waited++ }
     Thread.sleep(500)
     val rows = estado.rows()
-    val escenas = (a["--escena"] ?: "lista,cajon,seleccion,menu,etiquetas,eliminar,orden,buscar,claro,agregar,campos,general,archivos,lista-archivos,pares,rastreadores,piezas,velocidad,total,opciones,menu-detalle,general-claro").split(',')
+    val escenas = (a["--escena"] ?: "lista,cajon,seleccion,menu,etiquetas,eliminar,orden,buscar,claro,agregar,campos,general,archivos,lista-archivos,pares,rastreadores,piezas,velocidad,total,opciones,menu-detalle,general-claro,agregar-archivos,etiqueta,etiqueta-nueva,limites,puerto,ajustes,apagar,respaldos,reubicar,renombrar,duplicados").split(',')
     for (e in escenas) {
         estado.sel = emptySet(); estado.dialogo = null; estado.menu = null; estado.cajon = false; estado.buscando = false
         estado.filtro = cl.tablero.compose.Filtro(); estado.detalle = null
@@ -164,6 +206,21 @@ fun main(args: Array<String>) {
                 frames(1200)
                 if (e == "menu-detalle") estado.menu = "torrents"
             }
+            "agregar-archivos" -> {
+                plataforma.elegibles = listOf(ArchivoLocal("patagonia.torrent", File(File(archivos).parentFile, "patagonia.torrent").path))
+                estado.dialogo = Dialogo.Agregar(files = plataforma.elegibles); frames(1500)
+            }
+            "etiqueta" -> estado.dialogo = Dialogo.Etiqueta("Películas")
+            "etiqueta-nueva" -> estado.dialogo = Dialogo.Etiqueta(null)
+            "limites" -> { estado.dialogo = Dialogo.Limites; frames(1500) }
+            "puerto" -> estado.dialogo = Dialogo.Puerto
+            "ajustes" -> { estado.dialogo = Dialogo.Opciones; frames(800) }
+            "apagar" -> estado.dialogo = Dialogo.Apagar
+            "respaldos" -> { estado.dialogo = Dialogo.Respaldos; frames(800) }
+            "reubicar" -> estado.dialogo = Dialogo.Reubicar(rows.take(2).map { it.hash })
+            "renombrar" -> estado.dialogo = Dialogo.RenombrarCarpeta(rows.first { it.files > 1 }.hash)
+            "duplicados" -> estado.dialogo = Dialogo.Duplicados(listOf(mapOf("hash" to rows[0].hash, "name" to rows[0].name,
+                "trackers" to listOf("udp://tracker.otro.example:1337/announce", "https://tracker.ejemplo.org/announce"))))
             "filtro" -> { estado.toggleTagFilter("Películas", true); estado.toggleTagFilter("Linux", true) }
         }
         shot(e)

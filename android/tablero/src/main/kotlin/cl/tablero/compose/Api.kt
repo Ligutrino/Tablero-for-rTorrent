@@ -21,11 +21,19 @@ interface Plataforma {
     fun exportar(path: String)
     /** "Elegir con Android…": el selector de carpetas; responde la ruta o null. */
     fun elegirCarpeta(listo: (String?) -> Unit)
+    /** Hay selector de carpetas del sistema (el botón "Elegir con Android…"). */
+    val tieneSelectorCarpetas: Boolean get() = false
+    /**
+     * El selector de archivos del sistema ([tipos]: tipos MIME). Cada archivo elegido se copia al caché
+     * de la app y llega con su ruta, que Tablero lee; nada elegido: lista vacía.
+     */
+    fun elegirArchivos(tipos: List<String>, varios: Boolean, listo: (List<ArchivoLocal>) -> Unit)
+    /** La imagen reducida a [w]×[h] px, como PNG (para un logo demasiado pesado), o null. */
+    fun reducirImagen(bytes: ByteArray, w: Int, h: Int): ByteArray?
     /** Los bytes de un PNG, JPEG, WebP o GIF como imagen, o null. */
     fun imagen(bytes: ByteArray): ImageBitmap?
-    /** Mientras la interfaz Compose no tenga todo: abrir la interfaz web de siempre. */
-    val tieneWeb: Boolean get() = false
-    fun abrirWeb() {}
+    /** Preguntar la primera vez dónde guardar los respaldos (no en las capturas del escritorio). */
+    val primerRespaldo: Boolean get() = true
 }
 
 /**
@@ -45,6 +53,12 @@ class Api(private val fuente: () -> Tablero?) {
         withContext(Dispatchers.IO) { asMap(t().post(path, body)) }
 
     suspend fun logo(url: String): ByteArray? = withContext(Dispatchers.IO) { fuente()?.logoBytes(url) }
+
+    /** POST /api/backup-import con un .zip ya copiado a [path]. */
+    suspend fun importarRespaldo(path: String, folder: String, name: String): Map<String, Any?> = withContext(Dispatchers.IO) {
+        val f = java.io.File(path)
+        f.inputStream().use { asMap(t().importBackup(it, f.length(), folder, name)) }
+    }
 
     fun streamUrl(hash: String, index: Int, name: String) = t().streamUrl(hash, index, name)
 }

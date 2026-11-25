@@ -1,12 +1,14 @@
 package cl.tablero.ui
 
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -34,7 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import cl.tablero.compose.Api
-import cl.tablero.compose.ArchivoTorrent
+import cl.tablero.compose.ArchivoLocal
 import cl.tablero.compose.Dialogo
 import cl.tablero.compose.Estado
 import cl.tablero.compose.LocalColores
@@ -43,6 +45,7 @@ import cl.tablero.compose.TableroPantalla
 import cl.tablero.compose.TableroTema
 import io.github.ligutrino.rtorrent.engine.android.EngineProvider
 import kotlinx.coroutines.delay
+import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlin.concurrent.thread
 
@@ -68,6 +71,10 @@ class TableroActivity : ComponentActivity(), Plataforma {
 
     private var aExportar: File? = null
     private var carpetaListo: ((String?) -> Unit)? = null
+    private var archivosListo: ((List<ArchivoLocal>) -> Unit)? = null
+
+    private val elegirVarios = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { copiarElegidos(it) }
+    private val elegirUno = registerForActivityResult(ActivityResultContracts.OpenDocument()) { copiarElegidos(listOfNotNull(it)) }
 
     private val guardarComo = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         val origen = aExportar
@@ -153,7 +160,7 @@ class TableroActivity : ComponentActivity(), Plataforma {
             contentResolver.openInputStream(uri)?.use { ent -> f.outputStream().use { ent.copyTo(it) } } ?: return
         } catch (e: Exception) { return }
         val nombre = uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.endsWith(".torrent", true) } ?: f.name
-        estado.dialogo = (actualDialogo ?: Dialogo.Agregar()).let { d -> d.copy(files = d.files + ArchivoTorrent(nombre, f.absolutePath)) }
+        estado.dialogo = (actualDialogo ?: Dialogo.Agregar()).let { d -> d.copy(files = d.files + ArchivoLocal(nombre, f.absolutePath)) }
     }
 
     private fun copiarRespaldo(origen: File, uri: Uri) {
@@ -219,9 +226,52 @@ class TableroActivity : ComponentActivity(), Plataforma {
     override fun imagen(bytes: ByteArray): ImageBitmap? =
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
 
-    override val tieneWeb: Boolean get() = true
+    override val tieneSelectorCarpetas: Boolean get() = true
 
-    override fun abrirWeb() { startActivity(Intent(this, TableroWebActivity::class.java)) }
+    override fun elegirArchivos(tipos: List<String>, varios: Boolean, listo: (List<ArchivoLocal>) -> Unit) {
+        archivosListo = listo
+        try { if (varios) elegirVarios.launch(tipos.toTypedArray()) else elegirUno.launch(tipos.toTypedArray()) } catch (e: Exception) {
+            archivosListo = null
+            estado.aviso("Este Android no tiene selector de archivos", true)
+            listo(emptyList())
+        }
+    }
+
+    /** Los archivos elegidos, copiados al caché de la app con su nombre (Tablero los lee por ruta). */
+    private fun copiarElegidos(uris: List<Uri>) {
+        val listo = archivosListo ?: return
+        archivosListo = null
+        if (uris.isEmpty()) { listo(emptyList()); return }
+        thread(name = "tablero-elegidos") {
+            val out = uris.mapNotNull { uri ->
+                val nombre = nombreDe(uri)
+                val dir = File(cacheDir, "elegidos/${System.nanoTime()}").apply { mkdirs() }
+                val f = File(dir, nombre.replace('/', '_'))
+                try {
+                    contentResolver.openInputStream(uri)?.use { ent -> f.outputStream().use { ent.copyTo(it) } } ?: return@mapNotNull null
+                    ArchivoLocal(nombre, f.absolutePath)
+                } catch (e: Exception) { null }
+            }
+            runOnUiThread { listo(out) }
+        }
+    }
+
+    private fun nombreDe(uri: Uri): String {
+        try {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0)?.takeIf { it.isNotEmpty() }?.let { return it }
+            }
+        } catch (e: Exception) { /* sin nombre */ }
+        return uri.lastPathSegment?.substringAfterLast('/') ?: "archivo"
+    }
+
+    override fun reducirImagen(bytes: ByteArray, w: Int, h: Int): ByteArray? {
+        var b = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+        // En mitades, que conserva las líneas finas que un solo paso grande pierde (como prepareLogo de la web).
+        while (b.width / 2 >= w) b = Bitmap.createScaledBitmap(b, b.width / 2, maxOf(1, b.height / 2), true)
+        b = Bitmap.createScaledBitmap(b, w, h, true)
+        return ByteArrayOutputStream().also { b.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+    }
 }
 
 @Composable

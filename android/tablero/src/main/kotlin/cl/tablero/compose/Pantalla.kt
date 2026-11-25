@@ -146,7 +146,8 @@ private fun BarraSuperior(estado: Estado) {
     TopAppBar(colors = colors, navigationIcon = {
         IconButton(onClick = { estado.cajon = true }) { Icono("menu", size = 22.dp, desc = "Filtros") }
     }, title = {
-        Column {
+        // Tocar las velocidades abre Límites y conexiones, como en la barra de estado de la web.
+        Column(Modifier.clickable { estado.dialogo = Dialogo.Limites }) {
             Text("Tablero", fontSize = 18.sp, fontWeight = FontWeight.Medium)
             Velocidades(estado)
         }
@@ -156,8 +157,7 @@ private fun BarraSuperior(estado: Estado) {
             IconButton(onClick = { estado.menu = "orden" }) { Icono("arrow-up-down", size = 22.dp, desc = "Ordenar") }
             MenuOrden(estado)
         }
-        // Mientras la interfaz Compose no tenga todo, la web de siempre sigue a un toque.
-        if (estado.plataforma.tieneWeb) IconButton(onClick = { estado.plataforma.abrirWeb() }) { Icono("globe", size = 22.dp, desc = "Interfaz web") }
+        IconButton(onClick = { estado.dialogo = Dialogo.Opciones }) { Icono("settings", size = 22.dp, desc = "Opciones") }
     })
 }
 
@@ -233,6 +233,8 @@ fun MenuTorrents(estado: Estado) {
             }()
         }
         if (ts.size == 1) item("Abrir carpeta") { estado.abrirCarpeta(ts[0].hash) }()
+        item("Reubicar datos…") { estado.dialogo = Dialogo.Reubicar(hs) }()
+        item("Renombrar carpeta…", enabled = ts.size == 1 && ts[0].files >= 2) { estado.dialogo = Dialogo.RenombrarCarpeta(hs[0]) }()
         item("Verificar datos") {
             estado.act("/api/action", mapOf("action" to "recheck", "hashes" to hs), "Verificación iniciada: se revisa cada pieza contra el .torrent")
         }()
@@ -368,16 +370,25 @@ private fun Filtros(estado: Estado) {
                 Icono(s.icon, size = 16.dp, tint = c.dim); Text(s.name, fontSize = 14.sp)
             }
         }
-        head("Etiquetas") { if (!estado.prefs.tagbar && f.tags.size > 1) Coincide(estado) }
+        head("Etiquetas") {
+            if (!estado.prefs.tagbar && f.tags.size > 1) Coincide(estado)
+            Box(Modifier.clip(RoundedCornerShape(6.dp)).clickable { estado.cajon = false; estado.dialogo = Dialogo.Etiqueta(null) }.padding(4.dp)) {
+                Icono("plus", size = 18.dp, tint = c.dim, desc = "Nueva etiqueta")
+            }
+        }
         val forTags = estado.filtered(skipTags = true)
         val counts = HashMap<String, Int>()
         var none = 0
         forTags.forEach { t -> if (t.tags.isEmpty()) none++; t.tags.forEach { counts[it] = (counts[it] ?: 0) + 1 } }
         for (name in estado.allTags()) {
             val n = counts[name] ?: 0
-            fila(name in f.tags, n, countBg = if (n > 0) tagColor(estado.tagConf, name).copy(alpha = 0.28f) else c.panel2,
-                onClick = { estado.toggleTagFilter(name, multi = false) }, onLong = { estado.toggleTagFilter(name, multi = true) }) {
-                SideTag(estado, name)
+            var menu by remember { mutableStateOf(false) }
+            Box {
+                fila(name in f.tags, n, countBg = if (n > 0) tagColor(estado.tagConf, name).copy(alpha = 0.28f) else c.panel2,
+                    onClick = { estado.toggleTagFilter(name, multi = false) }, onLong = { menu = true }) {
+                    SideTag(estado, name)
+                }
+                MenuEtiqueta(estado, name, menu) { menu = false }
             }
         }
         fila(NO_TAG in f.tags, none, onClick = { estado.toggleTagFilter(NO_TAG, multi = false) }, onLong = { estado.toggleTagFilter(NO_TAG, multi = true) }) {
@@ -385,7 +396,7 @@ private fun Filtros(estado: Estado) {
                 Icono("ban", size = 16.dp, tint = c.dim); Text("Sin etiqueta", fontSize = 14.sp)
             }
         }
-        Text("Toque largo: elegir varias", fontSize = 11.sp, color = c.dim, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
+        Text("Toque largo: filtrar por varias, editar u ordenar", fontSize = 11.sp, color = c.dim, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
         val forTr = estado.filtered(skipTracker = true)
         val tr = forTr.filter { it.tracker.isNotEmpty() }.groupingBy { it.tracker }.eachCount()
         if (tr.isNotEmpty()) {
@@ -399,5 +410,24 @@ private fun Filtros(estado: Estado) {
                 }
             }
         }
+        head("Tablero")
+        @Composable fun accion(icon: String, label: String, tint: Color = c.dim, dialogo: Dialogo) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(RoundedCornerShape(6.dp))
+                .clickable { estado.cajon = false; estado.dialogo = dialogo }.padding(horizontal = 10.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icono(icon, size = 16.dp, tint = tint); Text(label, fontSize = 14.sp)
+            }
+        }
+        accion("gauge", "Límites y conexiones", dialogo = Dialogo.Limites)
+        val s = estado.stats
+        if (s.port > 0) {
+            val (cls, text) = estado.portState()
+            val next = estado.portNext()
+            accion("circle", "Puerto ${s.port}: $text" + if (next != 0L) " · $next al reiniciar rTorrent" else "",
+                tint = when (cls) { "good" -> c.good; "bad" -> c.bad; "warn" -> c.warn; else -> c.dim }, dialogo = Dialogo.Puerto)
+        }
+        accion("archive", "Respaldo y restauración", dialogo = Dialogo.Respaldos)
+        accion("settings", "Opciones", dialogo = Dialogo.Opciones)
+        if (estado.version.isNotEmpty()) Text("Tablero ${estado.version}", fontSize = 11.sp, color = c.dim, modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
     }
 }

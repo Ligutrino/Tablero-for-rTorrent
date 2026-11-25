@@ -38,9 +38,23 @@ import kotlinx.coroutines.launch
 sealed interface Dialogo {
     data class Eliminar(val hashes: List<String>) : Dialogo
     data class Etiquetas(val hashes: List<String>) : Dialogo
-    data class Agregar(val magnets: String = "", val files: List<ArchivoTorrent> = emptyList()) : Dialogo
+    data class Agregar(val magnets: String = "", val files: List<ArchivoLocal> = emptyList()) : Dialogo
     data object Campos : Dialogo
     data class Rastreadores(val hash: String) : Dialogo
+    data class Duplicados(val dups: List<Map<String, Any?>>) : Dialogo
+    /** Opciones de etiqueta; null: Nueva etiqueta. */
+    data class Etiqueta(val name: String?) : Dialogo
+    data class EliminarEtiqueta(val name: String) : Dialogo
+    data class Reubicar(val hashes: List<String>) : Dialogo
+    data class RenombrarCarpeta(val hash: String) : Dialogo
+    data object Limites : Dialogo
+    data object Puerto : Dialogo
+    data object Opciones : Dialogo
+    data object Apagar : Dialogo
+    data object Respaldos : Dialogo
+    data class Restaurar(val path: String) : Dialogo
+    data class Restaurado(val r: Map<String, Any?>) : Dialogo
+    data class PrimerRespaldo(val info: Map<String, Any?>) : Dialogo
 }
 
 @Composable
@@ -52,30 +66,48 @@ fun DialogoActual(estado: Estado) {
         is Dialogo.Agregar -> AgregarDialogo(estado, d)
         Dialogo.Campos -> CamposDialogo(estado)
         is Dialogo.Rastreadores -> RastreadoresDialogo(estado, d.hash)
+        is Dialogo.Duplicados -> DuplicadosDialogo(estado, d.dups)
+        is Dialogo.Etiqueta -> EtiquetaDialogo(estado, d.name)
+        is Dialogo.EliminarEtiqueta -> EliminarEtiquetaDialogo(estado, d.name)
+        is Dialogo.Reubicar -> ReubicarDialogo(estado, d.hashes)
+        is Dialogo.RenombrarCarpeta -> RenombrarCarpetaDialogo(estado, d.hash)
+        Dialogo.Limites -> LimitesDialogo(estado)
+        Dialogo.Puerto -> PuertoDialogo(estado)
+        Dialogo.Opciones -> OpcionesDialogo(estado)
+        Dialogo.Apagar -> ApagarDialogo(estado)
+        Dialogo.Respaldos -> RespaldosDialogo(estado)
+        is Dialogo.Restaurar -> RestaurarDialogo(estado, d.path)
+        is Dialogo.Restaurado -> RestauradoDialogo(estado, d.r)
+        is Dialogo.PrimerRespaldo -> PrimerRespaldoDialogo(estado, d.info)
     }
 }
 
-/** Un diálogo con título, cuerpo desplazable y botones (Cancelar y el principal). */
+/**
+ * Un diálogo con título, cuerpo desplazable y botones: [cancel] cierra y [ok] (si hay) corre [onOk], que
+ * devuelve si cerrar. [extra] va a la izquierda de Cancelar.
+ */
 @Composable
 fun Ventana(
-    estado: Estado, title: String, ok: String, onOk: suspend () -> Boolean, danger: Boolean = false,
-    extra: (@Composable () -> Unit)? = null, body: @Composable () -> Unit,
+    estado: Estado, title: String, ok: String?, onOk: suspend () -> Boolean = { true }, danger: Boolean = false,
+    cancel: String = "Cancelar", onCancel: () -> Unit = {}, extra: (@Composable () -> Unit)? = null, body: @Composable () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     val c = LocalColores.current
+    val yo = estado.dialogo
     AlertDialog(
-        onDismissRequest = { estado.dialogo = null },
+        onDismissRequest = { onCancel(); estado.dialogo = null },
         title = { Text(title, fontSize = 18.sp) },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) { body() } },
         confirmButton = {
-            TextButton(enabled = !busy, onClick = {
+            if (ok != null) TextButton(enabled = !busy, onClick = {
                 busy = true
-                scope.launch { if (onOk()) estado.dialogo = null; busy = false }
+                // Si onOk abrió otro diálogo (Restaurar, Sumar rastreadores…), ese queda.
+                scope.launch { if (onOk() && estado.dialogo === yo) estado.dialogo = null; busy = false }
             }, colors = if (danger) ButtonDefaults.textButtonColors(contentColor = c.bad) else ButtonDefaults.textButtonColors()) { Text(ok) }
         },
         dismissButton = {
-            Row { extra?.invoke(); TextButton(onClick = { estado.dialogo = null }) { Text("Cancelar") } }
+            Row { extra?.invoke(); TextButton(onClick = { onCancel(); estado.dialogo = null }) { Text(cancel) } }
         },
     )
 }
@@ -175,56 +207,8 @@ fun EtiquetasDialogo(estado: Estado, hashes: List<String>) {
     }
 }
 
-/** Un .torrent para agregar, que Tablero lee por su ruta (los que llegan de otras apps se copian al caché). */
-data class ArchivoTorrent(val name: String, val path: String)
-
-/**
- * Ronda 1: Agregar con enlaces magnet o URL de .torrent, y los .torrent que llegan de otras apps (sin
- * elegir archivos ni carpeta todavía).
- */
-@Composable
-fun AgregarDialogo(estado: Estado, d: Dialogo.Agregar) {
-    var magnets by remember(d.magnets) { mutableStateOf(d.magnets) }
-    var start by remember { mutableStateOf(true) }
-    val marcas = remember {
-        mutableStateMapOf<String, ToggleableState>().apply { estado.filtro.tags.filter { it != NO_TAG }.forEach { put(it, ToggleableState.On) } }
-    }
-    val nuevas = remember { mutableStateListOf<String>() }
-    Ventana(estado, "Agregar torrents", "Agregar", onOk = {
-        val tags = marcas.filter { it.value == ToggleableState.On }.keys.toList()
-        val lines = magnets.split(Regex("\\s+")).filter { it.isNotEmpty() }
-        if (lines.isEmpty() && d.files.isEmpty()) { estado.aviso("Agrega un archivo o un enlace", true); return@Ventana false }
-        var ok = 0; val fail = ArrayList<String>(); val dups = ArrayList<String>()
-        suspend fun send(body: Map<String, Any?>, label: String?) {
-            try {
-                val r = estado.api.post("/api/add", body)
-                val dup = asMap(r["duplicate"])
-                if (dup.isNotEmpty()) dups.add(str(dup["name"])) else ok++
-            } catch (e: Exception) { fail.add((if (label != null) "$label: " else "") + e.texto()) }
-        }
-        for (f in d.files) send(mapOf("path" to f.path, "directory" to "", "tags" to tags, "start" to start, "skip" to emptyList<Int>()), f.name)
-        for (m in lines) send(mapOf("magnet" to m, "directory" to "", "tags" to tags, "start" to start), null)
-        when {
-            fail.isNotEmpty() -> estado.aviso(fail.joinToString(" · "), true)
-            ok > 0 -> estado.aviso("$ok torrent${if (ok == 1) "" else "s"} agregado${if (ok == 1) "" else "s"}")
-        }
-        // Ronda 1: sin el diálogo de duplicados (Sumar rastreadores), solo el aviso.
-        if (dups.isNotEmpty()) estado.aviso("Ya está en la biblioteca: " + dups.joinToString(" · "), true)
-        estado.refresh()
-        true
-    }) {
-        if (d.files.isNotEmpty()) {
-            Text("Archivos", fontSize = 13.sp)
-            for (f in d.files) Text("• " + f.name, fontSize = 13.sp)
-        }
-        OutlinedTextField(magnets, { magnets = it }, Modifier.fillMaxWidth().heightIn(min = 96.dp),
-            label = { Text("Enlaces magnet") }, placeholder = { Text("magnet:?xt=urn:btih:…") })
-        Hint("Enlaces magnet o URL de archivos .torrent, uno por línea.")
-        Text("Etiquetas", fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
-        SelectorEtiquetas(estado, marcas, nuevas)
-        CheckFila(start, { start = it }) { Text("Iniciar la descarga", fontSize = 14.sp) }
-    }
-}
+/** Un archivo elegido o recibido de otra app, ya copiado al caché: Tablero lo lee por su ruta. */
+data class ArchivoLocal(val name: String, val path: String)
 
 /** Qué datos muestra cada fila (las columnas visibles de la web). */
 @Composable

@@ -54,6 +54,9 @@ fun logoBitmap(estado: Estado, url: String): ImageBitmap? {
     return if (has) logos[url] else null
 }
 
+/** Un logo aún sin subir (el elegido en Opciones de etiqueta), para la vista previa: se ve con la clave [key]. */
+fun ponerLogo(key: String, bmp: ImageBitmap?) { logos[key] = bmp }
+
 /** Si el logo de la etiqueta existe (falta el archivo: se muestra sin logo). */
 fun liveLogo(c: TagEntry?): String = c?.logo?.takeIf { it.isNotEmpty() && !(logos.containsKey(it) && logos[it] == null) } ?: ""
 
@@ -89,8 +92,8 @@ fun LogoImg(estado: Estado, entry: TagEntry, h: Dp, bg: Color?, desc: String? = 
  * o ambos, según cómo se eligió verla en [place]. [extra] va después del nombre (p. ej. la cuenta).
  */
 @Composable
-fun Chip(estado: Estado, name: String, place: String = "other", extra: String? = null, on: Boolean? = null, modifier: Modifier = Modifier) {
-    val conf = estado.tagConf
+fun Chip(estado: Estado, name: String, place: String = "other", extra: String? = null, on: Boolean? = null, modifier: Modifier = Modifier,
+         conf: TagConf = estado.tagConf) {
     val entry = conf.tags[name] ?: TagEntry()
     val color = tagColor(conf, name)
     val mode = tagMode(conf, name, place)
@@ -122,8 +125,7 @@ fun Chip(estado: Estado, name: String, place: String = "other", extra: String? =
 
 /** El inicio de una fila de la barra lateral: cuadro de color, logo o ícono y nombre (sideHTML). */
 @Composable
-fun SideTag(estado: Estado, name: String, modifier: Modifier = Modifier) {
-    val conf = estado.tagConf
+fun SideTag(estado: Estado, name: String, modifier: Modifier = Modifier, conf: TagConf = estado.tagConf) {
     val entry = conf.tags[name] ?: TagEntry()
     val color = tagColor(conf, name)
     val mode = tagMode(conf, name, "sidebar")

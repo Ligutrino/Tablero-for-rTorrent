@@ -1,5 +1,17 @@
 # Cambios de la variante Android
 
+## 0.11-android.5-kotlin (25-11-2026, rama `kotlin`)
+
+Tercera ronda de Compose: ya tiene todo lo de la web y la app no lleva WebView (se quitaron el globo,
+`TableroWebActivity` y el puente `TableroAndroid`; la web sigue para el acceso desde la red).
+- Agregar torrents completo: elegir .torrent con el selector de Android, archivos a bajar en árbol o lista, carpeta con
+  Examinar… o Elegir con Android…, espacio libre, y "Ya está en la biblioteca" con Sumar rastreadores.
+- Opciones de etiqueta (toque largo en una etiqueta de la barra lateral, o + para una nueva): nombre, color, ícono, logo
+  con tono y apariencia por lugar con vista previa; subir, bajar y eliminar etiquetas.
+- Límites y conexiones (tocando las velocidades de arriba), Estado del puerto, Opciones (engranaje), Apagar rTorrent,
+  Respaldo y restauración (con el primer respaldo), Reubicar datos y Renombrar carpeta.
+- La barra lateral suma la sección Tablero: Límites y conexiones, el puerto, Respaldo y Opciones.
+
 ## 0.11-android.4-kotlin (25-11-2026, rama `kotlin`)
 
 Segunda ronda de Compose: tocar un torrent (sin nada elegido) abre su detalle a pantalla completa, con las

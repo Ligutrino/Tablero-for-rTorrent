@@ -63,4 +63,8 @@ for name, files, tags, keep in demo:
     r = api("/api/add", {"file": make(name, files, keep), "directory": DL, "tags": tags, "start": True})
     print(name, r)
 api("/api/add", {"magnet": "magnet:?xt=urn:btih:" + "c" * 40 + "&dn=Ubuntu%2026.04%20desktop", "directory": DL, "tags": ["Linux"], "start": True})
+# Un .torrent con carpetas que no se agrega: para "Agregar torrents" con archivos (escena agregar-archivos).
+nuevo = make("Patagonia (documental)", [("video/01 Torres del Paine.mkv", 80000), ("video/02 Glaciares.mkv", 80000),
+                                       ("subtitulos/es.srt", 3000), ("subtitulos/en.srt", 3000), ("LEEME.txt", 500)], keep=False)
+with open(os.path.join(os.path.dirname(DL.rstrip("/")), "patagonia.torrent"), "wb") as f: f.write(base64.b64decode(nuevo))
 print("listo")

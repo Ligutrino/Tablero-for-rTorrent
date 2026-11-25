@@ -92,19 +92,9 @@ object TableroServidor : EngineServiceHook {
      */
     fun salir() {
         TableroActivity.cerrar()
-        TableroWebActivity.cerrar()
         thread(name = "tablero-salir") { detener() }
     }
 
     /** El Tablero que corre ahora, para la interfaz Compose (en el mismo proceso, sin HTTP). */
     @Synchronized fun actual(): Tablero? = tablero
-
-    /** true cuando el servidor ya contesta (para reintentar la carga de la WebView). */
-    fun responde(): Boolean = try {
-        (URL(url + "api/access").openConnection() as HttpURLConnection).run {
-            connectTimeout = 500; readTimeout = 1500
-            val ok = responseCode == 200
-            disconnect(); ok
-        }
-    } catch (e: Exception) { false }
 }

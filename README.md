@@ -25,15 +25,14 @@ LibreTorrent solo tienen que hablar con `TorrentEngine`.
 
 `android/tablero` es la app principal: **Tablero 0.11-android.2**. En el teléfono la interfaz es **Compose**
 (`cl.tablero.compose`, ver `android/tablero/COMPOSE.md`), que llama a la API en el mismo proceso. La web de siempre
-(`web/`, sin cambios, en `src/main/assets/web`) queda para el acceso desde la red y, mientras Compose no tenga todo,
-a un toque desde la app (el globo). La API que antes servía tablero.py la sirve ahora
+(`web/`, sin cambios, en `src/main/assets/web`) queda para el acceso desde la red; la app ya no lleva WebView. La API que antes servía tablero.py la sirve ahora
 `cl.tablero.backend`, en Kotlin, con las mismas rutas, el mismo JSON y los mismos archivos de configuración
 (`tags.json`, `general.json`, `access.json`, `backup.json`, `prefs.json`), así que una instalación de `main`
 se actualiza a esta sin perder nada. El APK ya no lleva Python.
 
 ```
  TableroActivity (Compose) ──Tablero.get/post──► cl.tablero.backend ──SCGI──┐
- otros equipos / TableroWebActivity ──HTTP :8090──┘                          ├─► rtorrent (socket Unix)
+ otros equipos (la web) ─────────HTTP :8090──┘                          ├─► rtorrent (socket Unix)
  TableroActivity ──► EngineProvider / EngineService ──► :engine ──SCGI─────────┘
 ```
 
@@ -164,7 +163,7 @@ para y comprueba que la sesión se restaura. Fuera de Docker: `tools/host-test.s
 | `native/build.sh <abi>…` | Compilación cruzada con el NDK. Deja `native/out/<abi>/librtorrent.so` |
 | `native/patches/<paquete>/*.patch` | Parches que se aplican al desempaquetar: descarga en orden (`d.sequential`) |
 | `android/engine` | Módulo library Kotlin: API neutral, cliente XML-RPC, daemon y servicio |
-| `android/tablero` | App con Tablero (WebView + backend Kotlin `cl.tablero.backend` + puente) |
+| `android/tablero` | App con Tablero (interfaz Compose `cl.tablero.compose` + backend Kotlin `cl.tablero.backend`) |
 | `android/tablero/referencia/tablero.py` | El tablero.py que reproduce el backend (no va en el APK) |
 | `android/app` | App mínima de prueba |
 | `tools/host-test` | Prueba de integración en la JVM |

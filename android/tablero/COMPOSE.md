@@ -5,8 +5,8 @@ Compose llama a la misma API que la web, en el mismo proceso y sin HTTP (`Tabler
 la misma tabla de rutas que `/api/...`). El servidor HTTP sigue corriendo: sirve la web para el acceso desde la red
 y la reproducción mientras baja (`/stream`).
 
-Mientras la interfaz Compose no tenga todo, el globo de la barra de arriba abre la web de siempre
-(`TableroWebActivity`). Se quita cuando la tabla de abajo esté completa.
+Desde la ronda 3 Compose tiene todo lo de la web y la app ya no lleva WebView (`TableroWebActivity` y el puente
+`TableroAndroid` se quitaron). La web sigue en `src/main/assets/web` para abrir Tablero desde otros equipos.
 
 | Archivo | Qué tiene |
 |---|---|
@@ -18,17 +18,23 @@ Mientras la interfaz Compose no tenga todo, el globo de la barra de arriba abre 
 | `Etiquetas.kt` | etiquetas como en la web: color, ícono o logo según el lugar |
 | `Lista.kt`, `Pantalla.kt`, `Dialogos.kt` | la pantalla, la lista, la barra lateral y los diálogos |
 | `Detalle.kt` | el detalle de un torrent y sus siete pestañas |
+| `Agregar.kt` | Agregar torrents (archivos, árbol, carpeta, espacio libre) y Ya está en la biblioteca |
+| `EtiquetaEditor.kt` | Opciones de etiqueta, eliminarla y su menú (toque largo en la barra lateral) |
+| `Ajustes.kt` | Límites y conexiones, Estado del puerto, Opciones y Apagar rTorrent |
+| `Respaldos.kt` | Respaldo y restauración, Restaurar, el resultado y el primer respaldo |
+| `Reubicar.kt` | Reubicar datos y Renombrar carpeta |
+| `Comunes.kt` | piezas de los formularios: campos, carpeta con Examinar… y Elegir con Android… |
 | `Iconos.kt` | generado por `tools/gen-iconos.py` desde `web/icons.js` (no editar a mano) |
 
 ## Lo que tiene la web, y lo que ya está en Compose
 
-Rondas 1 y 2 (✓) y lo que falta (○):
+Todo está (✓), en tres rondas:
 
 - ✓ Lista con estado, progreso, velocidades y etiquetas; tinte con el color de la primera etiqueta.
 - ✓ Datos de cada fila: cualquiera de las 22 columnas de la web (orden, nombre, etiquetas, tamaño, progreso…).
 - ✓ Orden por cualquier columna, otra vez la misma invierte; "Vista por defecto".
 - ✓ Buscar por nombre.
-- ✓ Barra lateral: filtros por estado, por etiqueta (toque largo: varias) y por rastreador, con sus cuentas.
+- ✓ Barra lateral: filtros por estado, por etiqueta (toque largo: menú con Agregar al filtro) y por rastreador, con sus cuentas.
 - ✓ Barra de etiquetas con "Coincide: Cualquiera / Todas".
 - ✓ Elegir torrents (toque largo, o tocar con algo ya elegido; elegir todos).
 - ✓ Iniciar, Pausar, Detener, Etiquetas…, Eliminar… (con o sin los datos).
@@ -38,7 +44,7 @@ Rondas 1 y 2 (✓) y lo que falta (○):
 - ✓ Agregar con enlaces magnet o URL, y los magnet y .torrent que llegan de otras apps.
 - ✓ Sin conexión con rTorrent: aviso con "Encender rTorrent".
 - ✓ Velocidad total arriba, con ⁽ˡ⁾ cuando hay límite.
-- ✓ Tema oscuro y claro, unidades binarias o decimales (desde prefs; el diálogo Opciones llega en la ronda 2).
+- ✓ Tema oscuro y claro, unidades binarias o decimales .
 - ✓ Atrás cierra menú, diálogo, barra lateral, selección y búsqueda, en ese orden.
 - ✓ Detalle del torrent (tocar una fila sin nada elegido): General (mapa de piezas, disponibilidad, datos, abrir carpeta),
   Archivos (árbol o lista, ocultar omitidos, prioridad por archivo o carpeta, reproducir mientras baja, mostrar en
@@ -46,14 +52,17 @@ Rondas 1 y 2 (✓) y lo que falta (○):
   torrent o total), Opciones (prioridad, límites, pares, al sembrar). Filtrar y ordenar las tablas.
   En el teléfono: el orden se elige con un botón (no hay títulos de columna) y lo que en la web es un tooltip
   se muestra al tocar (leyendas, cuadros de Piezas, instantes del gráfico). No hay anchos de columna.
-- ○ Agregar completo: elegir .torrent, archivos a bajar (árbol), carpeta (Examinar… y Elegir con Android…),
+- ✓ Agregar completo: elegir .torrent, archivos a bajar (árbol o lista), carpeta (Examinar… y Elegir con Android…),
   espacio libre, duplicados (Sumar rastreadores).
-- ○ Opciones de etiqueta: nombre, color, ícono, logo (con tono), apariencia por lugar; subir, bajar y eliminar etiquetas.
-- ○ Límites y conexiones (con gráfico), puerto (estado, probar, cambiar).
-- ○ Opciones: tema, tinte, barra de etiquetas, coincide, unidades, intervalo, apagar rTorrent, acceso desde la red,
-  importar colores de ruTorrent.
-- ○ Respaldo y restauración (crear, programar, exportar, importar, restaurar con cambio de carpetas), primer respaldo.
-- ○ Reubicar datos, renombrar carpeta, abrir carpeta, errores de reubicación.
+- ✓ Opciones de etiqueta: nombre (unir si ya existe), color (paleta u otro en hexadecimal), ícono, logo (con tono,
+  revisado y reducido si pesa más de 900 KB), apariencia por lugar con vista previa; subir, bajar y eliminar
+  etiquetas; agregar o quitar de los elegidos. Se abre con toque largo en la barra lateral, o con + para una nueva.
+- ✓ Límites y conexiones (con gráfico), puerto (estado, probar, cambiar). Se abren tocando las velocidades de arriba
+  y desde la barra lateral (sección Tablero).
+- ✓ Opciones (engranaje): tema, tinte, barra de etiquetas, coincide, unidades, intervalo, apagar y encender rTorrent,
+  acceso desde la red, importar colores de ruTorrent.
+- ✓ Respaldo y restauración (crear, programar, exportar, importar, restaurar con cambio de carpetas), primer respaldo.
+- ✓ Reubicar datos, renombrar carpeta, abrir carpeta, errores de reubicación (aviso).
 
 ## Probar en el escritorio
 
