@@ -191,7 +191,7 @@ fun main(args: Array<String>) {
             "menu" -> { estado.sel = rows.take(2).map { it.hash }.toSet(); frames(200); frames(100) }
             "menu-pos" -> {
                 estado.updatePrefs { it.copy(sort = cl.tablero.compose.Orden("pos", 1)) }; frames(300)
-                estado.sel = rows.take(2).map { it.hash }.toSet(); frames(200); estado.menu = "posicion"
+                estado.sel = rows.take(2).map { it.hash }.toSet(); frames(200); estado.dialogo = Dialogo.Posicion(estado.sel.toList())
             }
             "etiquetas" -> { estado.sel = rows.take(2).map { it.hash }.toSet(); estado.dialogo = Dialogo.Etiquetas(rows.take(2).map { it.hash }) }
             "eliminar" -> { estado.sel = rows.take(1).map { it.hash }.toSet(); estado.dialogo = Dialogo.Eliminar(rows.take(1).map { it.hash }) }

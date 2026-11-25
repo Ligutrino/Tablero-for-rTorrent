@@ -1,5 +1,11 @@
 # Cambios de la variante Android
 
+## 0.11-android.24-kotlin (25-11-2026, rama `kotlin`)
+
+- Barra lateral hasta abajo otra vez: la línea sobre la versión queda a la altura del borde de la barra de navegación y la
+  versión dentro de esa franja.
+- Posición (#) pasa de menú a diálogo como Ordenar: radios Al principio/Subir/Bajar/Al final y botón Mover.
+
 ## 0.11-android.23-kotlin (25-11-2026, rama `kotlin`)
 
 - Sin el botón Más: la barra de abajo muestra Iniciar, Pausar, Detener, Etiquetas, Abrir, Reubicar, Renombrar, Verificar,

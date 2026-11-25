@@ -1,5 +1,7 @@
 package cl.tablero.compose
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -88,14 +90,15 @@ fun TableroPantalla(estado: Estado) {
         }
         val det = estado.detalle?.let { estado.byHash[it] }
         ModalNavigationDrawer(drawerState = drawer, gesturesEnabled = det == null, drawerContent = {
-            // La hoja termina sobre la barra de navegación (no se mete en ella); arriba sí va bajo la de estado.
-            ModalDrawerSheet(drawerContainerColor = c.panel, windowInsets = WindowInsets.statusBars,
-                modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)).width(300.dp)) {
+            // La hoja llega hasta abajo; la línea sobre la versión queda a la altura del borde de la barra de navegación
+            // y la versión, dentro de esa franja.
+            ModalDrawerSheet(drawerContainerColor = c.panel, windowInsets = WindowInsets.statusBars, modifier = Modifier.width(300.dp)) {
                 // Los filtros se desplazan; la versión queda fija abajo, siempre a la vista.
                 Box(Modifier.weight(1f)) { Filtros(estado) }
-                if (estado.version.isNotEmpty()) {
-                    HorizontalDivider(color = c.line)
-                    Text("Tablero ${estado.version}", fontSize = 11.sp, color = c.dim, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+                HorizontalDivider(color = c.line)
+                val nav = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                Box(Modifier.fillMaxWidth().height(maxOf(nav, 36.dp)).padding(horizontal = 16.dp), contentAlignment = Alignment.CenterStart) {
+                    if (estado.version.isNotEmpty()) Text("Tablero ${estado.version}", fontSize = 11.sp, color = c.dim)
                 }
             }
         }) {
@@ -261,23 +264,6 @@ private fun Velocidades(estado: Estado, lado: Boolean) {
 }
 
 /**
- * El menú Posición (#): el # solo ordena la lista (rTorrent no tiene cola de descargas), así que el botón aparece
- * cuando la lista está ordenada por # y no hay un torrent abierto.
- */
-@Composable
-fun MenuPosicion(estado: Estado) {
-    val c = LocalColores.current
-    val hs = estado.objetivo().map { it.hash }
-    DropdownMenu(expanded = estado.menu == "posicion" && hs.isNotEmpty(), onDismissRequest = { estado.menu = null }, containerColor = c.panel2) {
-        Text("Posición en la lista (#)", fontSize = 12.sp, color = c.dim, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-        for ((w, n, i) in listOf(Triple("top", "Al principio", "arrow-up-to-line"), Triple("up", "Subir", "arrow-up"), Triple("down", "Bajar", "arrow-down"), Triple("bottom", "Al final", "arrow-down-to-line")))
-            DropdownMenuItem(text = { Text(n) }, leadingIcon = { Icono(i, size = 16.dp) }, onClick = {
-                estado.menu = null; estado.act("/api/move", mapOf("hashes" to hs, "where" to w))
-            })
-    }
-}
-
-/**
  * Las acciones sobre los torrents elegidos o el abierto, todas a la vista: Iniciar, Pausar, Detener, Etiquetas, las de
  * los datos (Abrir, Reubicar, Renombrar, Verificar), Posición si la lista va por # y Eliminar al final. Si no caben
  * (teléfono), la barra se desplaza de lado.
@@ -314,10 +300,7 @@ private fun BarraAcciones(estado: Estado) {
                 accion("refresh-cw", "Verificar") {
                     estado.act("/api/action", mapOf("action" to "recheck", "hashes" to hs()), "Verificación iniciada: se revisa cada pieza contra el .torrent")
                 }
-                if (posicion) Box {
-                    accion("list-ordered", "Posición") { estado.menu = "posicion" }
-                    MenuPosicion(estado)
-                }
+                if (posicion) accion("list-ordered", "Posición") { estado.dialogo = Dialogo.Posicion(hs()) }
                 accion("trash-2", "Eliminar", c.bad) { estado.dialogo = Dialogo.Eliminar(hs()) }
             }
         }
