@@ -158,19 +158,22 @@ fun PuertoDialogo(estado: Estado) {
             Hint("Si llegan pares desde internet, el puerto está abierto. Si no llega ninguno, puede estar cerrado o simplemente no hay pares buscando.")
         }
         Campo("Prueba") {
-            BotonHerr("search", "Probar puerto") {
-                test = "" to "Probando…"
-                estado.launch {
-                    test = try {
-                        val r = estado.probarPuerto()
-                        if (bool(r["demo"])) "" to "Modo demo: aquí diría si el puerto está abierto."
-                        else if (bool(r["reachable"])) "good" to "Abierto: ifconfig.co pudo conectarse a ${str(r["ip"])}:${lng(r["port"])}."
-                        else "bad" to "Cerrado: ifconfig.co no pudo conectarse a ${str(r["ip"])}:${lng(r["port"])}."
-                    } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; "bad" to e.texto() }
+            // El botón y el resultado, uno al lado del otro.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                BotonHerr("search", "Probar puerto") {
+                    test = "" to "Probando…"
+                    estado.launch {
+                        test = try {
+                            val r = estado.probarPuerto()
+                            if (bool(r["demo"])) "" to "Modo demo: aquí diría si el puerto está abierto."
+                            else if (bool(r["reachable"])) "good" to "Abierto: ifconfig.co pudo conectarse a ${str(r["ip"])}:${lng(r["port"])}."
+                            else "bad" to "Cerrado: ifconfig.co no pudo conectarse a ${str(r["ip"])}:${lng(r["port"])}."
+                        } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; "bad" to e.texto() }
+                    }
                 }
+                val (k, t) = test ?: (cls to "Estado: $text")
+                androidx.compose.foundation.layout.Box(Modifier.weight(1f)) { Marca(k, t) }
             }
-            val (k, t) = test ?: (cls to "Estado: $text")
-            Marca(k, t)
             Hint("Le pide a ifconfig.co que intente conectarse a tu IP pública en este puerto. Solo se envía el número de puerto. Tablero hace esta prueba solo al iniciar.")
         }
         Campo("Si está cerrado") {

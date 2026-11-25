@@ -227,6 +227,7 @@ class TableroActivity : ComponentActivity(), Plataforma {
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
 
     override val tieneSelectorCarpetas: Boolean get() = true
+    override val propiedadesDialogo get() = propiedadesDialogo()
 
     override fun elegirArchivos(tipos: List<String>, varios: Boolean, listo: (List<ArchivoLocal>) -> Unit) {
         archivosListo = listo

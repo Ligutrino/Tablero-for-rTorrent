@@ -2,6 +2,8 @@ package cl.tablero.compose
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
@@ -101,8 +103,10 @@ fun Ventana(
     AlertDialog(
         onDismissRequest = { onCancel(); estado.dialogo = null },
         // Más ancho que el de Material (que deja los formularios muy angostos en un teléfono): el ancho menos 16 dp por lado.
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).widthIn(max = 560.dp),
+        properties = estado.plataforma.propiedadesDialogo,
+        // Sin el ancho de Material la ventana no respeta sola las barras del sistema: se dejan fuera con systemBars.
+        modifier = Modifier.windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.systemBars)
+            .padding(horizontal = 16.dp, vertical = 12.dp).widthIn(max = 560.dp).fillMaxWidth(),
         title = { Text(title, fontSize = 18.sp) },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) { body() } },
         confirmButton = {

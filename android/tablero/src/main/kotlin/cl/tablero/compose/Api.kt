@@ -34,6 +34,9 @@ interface Plataforma {
     fun imagen(bytes: ByteArray): ImageBitmap?
     /** Preguntar la primera vez dónde guardar los respaldos (no en las capturas del escritorio). */
     val primerRespaldo: Boolean get() = true
+    /** Las propiedades de los diálogos (en Android, además, bajo las barras del sistema). */
+    val propiedadesDialogo: androidx.compose.ui.window.DialogProperties
+        get() = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
 }
 
 /**

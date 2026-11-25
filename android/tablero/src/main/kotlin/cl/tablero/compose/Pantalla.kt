@@ -154,7 +154,7 @@ private fun BarraSuperior(estado: Estado) {
         IconButton(onClick = { estado.cajon = true }) { Icono("menu", size = 22.dp, desc = "Filtros") }
     }, title = {
         // Tocar las velocidades abre o cierra el gráfico de velocidad abajo.
-        Velocidades(estado, Modifier.clickable { estado.grafico = !estado.grafico })
+        TituloYVelocidades(estado, Modifier.clickable { estado.grafico = !estado.grafico })
     }, actions = {
         // De izquierda a derecha: buscar, ordenar, límites, opciones, puerto y encendido (este queda en la esquina).
         BotonBarra("search", "Buscar") { estado.buscando = true }
@@ -203,6 +203,26 @@ private fun BotonEncendido(estado: Estado) {
         when {
             on -> estado.dialogo = Dialogo.Apagar
             else -> { estado.plataforma.encenderRtorrent(); estado.aviso("Encendiendo rTorrent…"); estado.launch { kotlinx.coroutines.delay(2500); estado.refresh() } }
+        }
+    }
+}
+
+/** "Tablero" y las velocidades; el nombre se ve solo si cabe entero junto a ellas (pantallas anchas, horizontal). */
+@Composable
+private fun TituloYVelocidades(estado: Estado, modifier: Modifier = Modifier) {
+    androidx.compose.ui.layout.Layout(content = {
+        Text("Tablero", fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
+        Velocidades(estado)
+    }, modifier = modifier) { ms, cs ->
+        val gap = 12.dp.roundToPx()
+        val v = ms[1].measure(cs.copy(minWidth = 0))
+        val t = ms[0].measure(androidx.compose.ui.unit.Constraints())
+        val both = t.width + gap + v.width <= cs.maxWidth
+        val w = if (both) t.width + gap + v.width else v.width
+        val h = maxOf(v.height, if (both) t.height else 0)
+        layout(w, h) {
+            if (both) { t.placeRelative(0, (h - t.height) / 2); v.placeRelative(t.width + gap, (h - v.height) / 2) }
+            else v.placeRelative(0, (h - v.height) / 2)
         }
     }
 }

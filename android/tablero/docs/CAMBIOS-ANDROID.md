@@ -1,5 +1,12 @@
 # Cambios de la variante Android
 
+## 0.11-android.9-kotlin (25-11-2026, rama `kotlin`)
+
+- "Tablero" vuelve a la barra superior, junto a las velocidades, cuando cabe entero (tabletas, horizontal).
+- Los diálogos respetan las barras del sistema (en tabletas tapaban la barra de navegación y los botones de abajo
+  quedaban bajo ella) y miden como máximo 560 dp de ancho.
+- Estado del puerto: el resultado de la prueba va al lado del botón Probar puerto.
+
 ## 0.11-android.8-kotlin (25-11-2026, rama `kotlin`)
 
 - El gráfico de velocidad sale de Límites y conexiones: tocar las velocidades de arriba abre (o cierra) un panel con el
