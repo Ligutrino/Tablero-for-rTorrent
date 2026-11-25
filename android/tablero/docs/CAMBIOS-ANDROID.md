@@ -1,5 +1,13 @@
 # Cambios de la variante Android
 
+## 0.11-android.3-kotlin (25-11-2026, rama `kotlin`)
+
+Primera ronda de la interfaz en Compose (`cl.tablero.compose`), que reemplaza a la WebView en el teléfono:
+lista, barra lateral con filtros, barra de etiquetas, búsqueda, orden, datos de cada fila, elegir torrents,
+iniciar, pausar, detener, eliminar, asignar etiquetas, menú del torrent y agregar enlaces o .torrent recibidos
+de otras apps. Lo que falta (detalle, opciones, respaldos…) se abre en la web de siempre desde el globo de
+la barra de arriba. La API y los archivos de configuración no cambian. Ver `../COMPOSE.md`.
+
 ## 0.11-android.2-kotlin (25-11-2026, rama `kotlin`)
 
 La misma 0.11-android.2, con la API servida por un backend en Kotlin (`cl.tablero.backend`) en vez de tablero.py con Chaquopy. La interfaz web no cambia. Mismas rutas, mismo JSON y mismos archivos de configuración. Ver `../PORTAR-A-KOTLIN.md`.

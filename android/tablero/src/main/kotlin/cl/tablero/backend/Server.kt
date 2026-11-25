@@ -45,6 +45,9 @@ fun reason(code: Int) = when (code) {
 }
 
 /** De dónde salen los archivos de la interfaz (web/): una carpeta, o los assets de la app. */
+/** Un error de la API con su código HTTP: 400 pedido malo, 404, 502 rTorrent caído o con error. */
+class ApiError(val code: Int, override val message: String) : Exception(message)
+
 fun interface WebRoot {
     /** El archivo en [path] (relativo, sin / al comienzo), o null si no existe. */
     fun open(path: String): ByteArray?
@@ -136,6 +139,38 @@ class Tablero(private val o: Options) {
         restart = true
         runCatching { server?.close() }
     }
+
+    // ---------------------------------------------------------------- en el mismo proceso
+
+    /**
+     * La API sin HTTP, para la interfaz Compose de la app: las mismas rutas y respuestas que
+     * GET/POST /api/..., siempre como pedido local. Lanza [ApiError] donde HTTP respondería un error.
+     */
+    fun get(path: String, query: Map<String, String> = emptyMap()): Any? {
+        val fn = getRoute(path, { query[it] }, true) ?: throw ApiError(404, "not found")
+        return if (path in unguarded) fn() else guarded(fn)
+    }
+
+    fun post(path: String, body: Any? = obj()): Any? {
+        val fn = postRoute(path, body ?: obj(), true) ?: throw ApiError(404, "not found")
+        return guarded { val r = fn(); if (r is Map<*, *>) r else obj("ok" to true) }
+    }
+
+    /** POST /api/backup-import: el .zip llega como flujo. */
+    fun importBackup(input: InputStream, size: Long, folder: String, name: String): Any? =
+        guarded { backups.importFile(input, size, folder, name) }
+
+    /** GET /api/backup-file: la ruta del respaldo, para copiarlo donde elija el usuario. */
+    fun backupFilePath(p: String): String = try { backups.backupPath(p) } catch (e: Exception) { throw ApiError(404, e.message ?: e.toString()) }
+
+    /** GET /logos/<nombre>: los bytes del logo de una etiqueta, o null. */
+    fun logoBytes(url: String): ByteArray? {
+        val m = logoRe.matchEntire(url) ?: return null
+        return try { File(PyPath.join(tagstore.logoDir(), m.groupValues[1])).readBytes() } catch (e: IOException) { null }
+    }
+
+    /** La dirección de reproducción de un archivo, servida por este mismo servidor. */
+    fun streamUrl(hash: String, index: Int, name: String): String = "http://127.0.0.1:${o.port}/stream/$hash/$index/${quote(name)}"
 
     // ---------------------------------------------------------------- HTTP
 
@@ -246,19 +281,21 @@ class Tablero(private val o: Options) {
 
     /** Los errores como en _guard de tablero.py: rTorrent caído o con error 502, pedido malo 400. */
     private fun guard(res: Res, fn: () -> Any?) {
-        val r = try { fn() } catch (e: Exception) {
-            when (e) {
-                is XmlRpcFault -> res.json(obj("error" to "rTorrent: ${e.faultString}"), 502)
-                is IOException -> res.json(obj("error" to "No se pudo conectar con rTorrent: ${e.message ?: e}"), 502)
-                is BadRequest -> res.json(obj("error" to (e.message ?: "")), 400)
-                is NumberFormatException, is ClassCastException, is IndexOutOfBoundsException,
-                is NoSuchElementException, is NullPointerException, is IllegalArgumentException ->
-                    res.json(obj("error" to (e.message ?: e.toString())), 400)
-                else -> throw e
-            }
-            return
-        }
+        val r = try { guarded(fn) } catch (e: ApiError) { return res.json(obj("error" to e.message), e.code) }
         res.json(r)
+    }
+
+    /** El mismo mapeo de errores, como [ApiError] con su código HTTP. */
+    private fun guarded(fn: () -> Any?): Any? = try { fn() } catch (e: Exception) {
+        throw when (e) {
+            is XmlRpcFault -> ApiError(502, "rTorrent: ${e.faultString}")
+            is IOException -> ApiError(502, "No se pudo conectar con rTorrent: ${e.message ?: e}")
+            is BadRequest -> ApiError(400, e.message ?: "")
+            is NumberFormatException, is ClassCastException, is IndexOutOfBoundsException,
+            is NoSuchElementException, is NullPointerException, is IllegalArgumentException ->
+                ApiError(400, e.message ?: e.toString())
+            else -> e
+        }
     }
 
     private val streamRe = Regex("/stream/([0-9A-Fa-f]{40})/(\\d+)(?:/[^/]*)?")
@@ -273,28 +310,36 @@ class Tablero(private val o: Options) {
     }
 
     private fun doGet(req: Req, res: Res) {
-        val b = backend
-        when (req.path) {
-            "/api/access" -> return res.json(access.info().apply { put("local", req.local); put("platform", Tab.platform) })
-            "/api/torrents" -> return guard(res) { b.list().apply { put("tablero", Tab.VERSION); put("platform", Tab.platform) } }
-            "/api/backups" -> return guard(res) { backups.list(q(req, "folder") ?: "") }
-            "/api/prefs" -> return guard(res) { backups.loadPrefs() }
-            "/api/backup-file" -> return backupFile(res, q(req, "path") ?: "")
-            "/api/details" -> {
-                val h = parseQs(req.query)["hash"]?.get(0)
-                    ?: return res.send(500, "text/plain", "missing hash".toByteArray())  // tablero.py se cae aquí
-                return guard(res) { b.details(h) }
-            }
-            "/api/dirs" -> return res.json(listDirs(q(req, "path") ?: ""))
-            "/api/free-space" -> return guard(res) { freeSpace(q(req, "path").takeUnless { it.isNullOrEmpty() } ?: b.defaultDir()) }
-            "/api/history" -> return res.json(history.get(q(req, "hash")))
-            "/api/tags" -> return res.json(tagstore.get())
-            "/api/general" -> return res.json(general())
-            "/api/local-ip" -> return res.json(obj("ip" to localIp()))
+        if (req.path == "/api/details" && parseQs(req.query)["hash"] == null)
+            return res.send(500, "text/plain", "missing hash".toByteArray())  // tablero.py se cae aquí
+        if (req.path == "/api/backup-file") return backupFile(res, q(req, "path") ?: "")
+        getRoute(req.path, { q(req, it) }, req.local)?.let { fn ->
+            return if (req.path in unguarded) res.json(fn()) else guard(res, fn)
         }
         logoRe.matchEntire(req.path)?.let { return logo(res, it.groupValues[1], it.groupValues[2]) }
         streamRe.matchEntire(req.path)?.let { return stream(req, res, it.groupValues[1].uppercase(), it.groupValues[2].toInt(), head = false) }
         staticFile(req, res, head = false)
+    }
+
+    /** Las rutas GET de la API que no pasan por _guard en tablero.py. */
+    private val unguarded = setOf("/api/access", "/api/dirs", "/api/history", "/api/tags", "/api/general", "/api/local-ip")
+
+    private fun getRoute(path: String, q: (String) -> String?, local: Boolean): (() -> Any?)? {
+        val b = backend
+        return when (path) {
+            "/api/access" -> { { access.info().apply { put("local", local); put("platform", Tab.platform) } } }
+            "/api/torrents" -> { { b.list().apply { put("tablero", Tab.VERSION); put("platform", Tab.platform) } } }
+            "/api/backups" -> { { backups.list(q("folder") ?: "") } }
+            "/api/prefs" -> { { backups.loadPrefs() } }
+            "/api/details" -> { { b.details(q("hash") ?: throw BadRequest("'hash'")) } }
+            "/api/dirs" -> { { listDirs(q("path") ?: "") } }
+            "/api/free-space" -> { { freeSpace(q("path").takeUnless { it.isNullOrEmpty() } ?: b.defaultDir()) } }
+            "/api/history" -> { { history.get(q("hash")) } }
+            "/api/tags" -> { { tagstore.get() } }
+            "/api/general" -> { { general() } }
+            "/api/local-ip" -> { { obj("ip" to localIp()) } }
+            else -> null
+        }
     }
 
     private fun errorPage(code: Int, msg: String) = ("<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n" +
@@ -427,8 +472,8 @@ class Tablero(private val o: Options) {
         return out
     }
 
-    private fun setAccess(req: Req, body: Map<String, Any?>): Obj {
-        if (!req.local) throw BadRequest("El acceso desde la red solo se cambia en %s donde corre Tablero".format(
+    private fun setAccess(local: Boolean, body: Map<String, Any?>): Obj {
+        if (!local) throw BadRequest("El acceso desde la red solo se cambia en %s donde corre Tablero".format(
             if (Tab.platform == "android") "el teléfono/tableta" else "el equipo"))
         val r = access.save(body["lan"], body["password"] as? String ?: "")
         if (r["restart"] == true) thread(isDaemon = true) { Thread.sleep(500); restartSelf() }
@@ -449,6 +494,11 @@ class Tablero(private val o: Options) {
         val bodyAny = try { if (got == 0) obj() else Json.parse(raw.copyOf(got)) } catch (e: BadRequest) {
             return res.json(obj("error" to "JSON inválido"), 400)
         }
+        val fn = postRoute(req.path, bodyAny, req.local) ?: return res.json(obj("error" to "not found"), 404)
+        guard(res) { val r = fn(); if (r is Map<*, *>) r else obj("ok" to true) }
+    }
+
+    private fun postRoute(path: String, bodyAny: Any?, local: Boolean): (() -> Any?)? {
         val b = backend
         fun body() = asObj(bodyAny)
         fun bytesOf(v: Any?): ByteArray = try { Base64.getMimeDecoder().decode(asStr(v)) } catch (e: IllegalArgumentException) {
@@ -483,14 +533,13 @@ class Tablero(private val o: Options) {
             "/api/relocate" to { val o = body(); b.relocate(strList(o.need("hashes")), o.need("target"), truthy(o["move"]), truthy(o["check"])) },
             "/api/tags" to { tagstore.save(body()) },
             "/api/logo" to { tagstore.addLogo(bytesOf(body().need("data"))) },
-            "/api/access" to { setAccess(req, body()) },
+            "/api/access" to { setAccess(local, body()) },
             "/api/prefs" to { backups.savePrefs(or(body()["prefs"], obj())) },
             "/api/backup-settings" to { val o = body(); backups.setSettings(o["folder"] ?: "", o["every"] ?: "never", o["keep"] ?: 5L) },
             "/api/backup" to { backups.create(body()["folder"]) },
             "/api/restore-inspect" to { val o = body(); backups.inspect(asStr(o.need("path")), o["from"] as? String ?: "", o["to"] as? String ?: "") },
             "/api/restore" to { val o = body(); backups.restore(asStr(o.need("path")), asObj(or(o["parts"], obj())), o["from"] as? String ?: "", o["to"] as? String ?: "") },
         )
-        val fn = routes[req.path] ?: return res.json(obj("error" to "not found"), 404)
-        guard(res) { val r = fn(); if (r is Map<*, *>) r else obj("ok" to true) }
+        return routes[path]
     }
 }

@@ -20,7 +20,12 @@ git merge main
 ```
 
 Git sigue los archivos movidos: los cambios de `web/` caen en `src/main/assets/web/` y los de tablero.py en
-`referencia/tablero.py`. Lo de `web/` ya queda listo.
+`referencia/tablero.py`. Lo de `web/` ya queda listo para el acceso desde la red; en el teléfono la interfaz es
+Compose, y el cambio hay que hacerlo también ahí (ver `COMPOSE.md`, al final):
+
+```bash
+git diff ORIG_HEAD -- android/tablero/src/main/assets/web/
+```
 
 Lo de tablero.py hay que portarlo a mano. El diff dice qué:
 
@@ -59,5 +64,7 @@ python3 tools/tablero-compare.py native/out/host/librtorrent.so /tmp/ref/tablero
 respaldos, restaurar, logos, acceso, archivos de la interfaz…) con tablero.py y con el backend Kotlin, cada uno con su
 rtorrent, y compara las respuestas. Al portar algo nuevo, agrega ahí la llamada que lo usa: si las dos columnas dan
 lo mismo, el port está bien. `docker build --target hosttest .` corre las pruebas de la API y de streaming contra el backend Kotlin.
+
+Para la interfaz Compose: `tools/compose-shots.sh /tmp/capturas probar` (ver `COMPOSE.md`).
 
 Al terminar, sube `VERSION` en `Server.kt` y `versionName`/`versionCode` en `build.gradle.kts` (siempre por encima del de `main`).

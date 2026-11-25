@@ -7,6 +7,14 @@ Uso: tablero-compare.py RTORRENT_BIN TABLERO_PY TABLERO_KOTLIN WEB_DIR DIR_TRABA
 import base64, hashlib, json, os, random, re, shutil, socket, subprocess, sys, time, urllib.error, urllib.request, zipfile
 
 BIN, PY, KT, WEB, W = sys.argv[1:6]
+# tablero.py sirve ./web junto a sí mismo: en la rama kotlin está en referencia/, sin web/ al lado.
+if not os.path.isdir(os.path.join(os.path.dirname(os.path.abspath(PY)), "web")):
+    os.makedirs(os.path.join(W, "pyref"), exist_ok=True)
+    _py = os.path.join(W, "pyref", "tablero.py")
+    shutil.copy(PY, _py)
+    if not os.path.lexists(os.path.join(W, "pyref", "web")):
+        os.symlink(os.path.abspath(WEB), os.path.join(W, "pyref", "web"))
+    PY = _py
 PORT = 18095
 
 def be(x):

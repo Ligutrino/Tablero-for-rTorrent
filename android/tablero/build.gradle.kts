@@ -1,8 +1,10 @@
-// App con Tablero como interfaz: WebView + backend de Tablero en Kotlin (cl.tablero.backend) + :engine.
-// Rama kotlin: sin Python. La rama main sigue con tablero.py y Chaquopy.
+// App con Tablero como interfaz: Compose (cl.tablero.compose) + backend de Tablero en Kotlin
+// (cl.tablero.backend) + :engine. La web/ queda para el acceso desde la red.
+// Rama kotlin: sin Python. La rama main sigue con tablero.py, Chaquopy y la WebView.
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 // Mismas ABIs que librtorrent.so.
@@ -18,8 +20,8 @@ android {
         applicationId = "cl.tablero.android"
         minSdk = 28
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.11-android.2-kotlin"
+        versionCode = 10
+        versionName = "0.11-android.3-kotlin"
         ndk { abiFilters += abis }
     }
 
@@ -40,6 +42,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    buildFeatures { compose = true }
+
     // rtorrent se ejecuta desde nativeLibraryDir: los .so deben quedar extraídos.
     packaging { jniLibs { useLegacyPackaging = true } }
 }
@@ -51,4 +55,13 @@ kotlin {
 
 dependencies {
     implementation(project(":engine"))
+    // Compose 1.7 y Material 3 1.3: las mismas APIs que Compose Multiplatform 1.7.3, con el que
+    // tools/tablero-compose compila y prueba la interfaz en el escritorio.
+    implementation(platform("androidx.compose:compose-bom:2024.12.01"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }

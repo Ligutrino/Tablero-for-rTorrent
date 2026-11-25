@@ -23,16 +23,18 @@ LibreTorrent solo tienen que hablar con `TorrentEngine`.
 > Esta es la rama **`kotlin`**. La rama **`main`** sigue con el build tradicional (tablero.py con Chaquopy).
 > Los cambios de Tablero entran primero en `main` y después se portan aquí: ver `android/tablero/PORTAR-A-KOTLIN.md`.
 
-`android/tablero` es la app principal: **Tablero 0.11-android.2** con la interfaz web de siempre (`web/`, sin cambios,
-en `src/main/assets/web`) mostrada en una WebView. La API que antes servía tablero.py la sirve ahora
+`android/tablero` es la app principal: **Tablero 0.11-android.2**. En el teléfono la interfaz es **Compose**
+(`cl.tablero.compose`, ver `android/tablero/COMPOSE.md`), que llama a la API en el mismo proceso. La web de siempre
+(`web/`, sin cambios, en `src/main/assets/web`) queda para el acceso desde la red y, mientras Compose no tenga todo,
+a un toque desde la app (el globo). La API que antes servía tablero.py la sirve ahora
 `cl.tablero.backend`, en Kotlin, con las mismas rutas, el mismo JSON y los mismos archivos de configuración
 (`tags.json`, `general.json`, `access.json`, `backup.json`, `prefs.json`), así que una instalación de `main`
 se actualiza a esta sin perder nada. El APK ya no lleva Python.
 
 ```
- TableroActivity (WebView) ──HTTP 127.0.0.1:8090──► cl.tablero.backend ──SCGI──┐
-          │  window.TableroAndroid (TableroPuente)                              ├─► rtorrent (socket Unix)
-          └──► EngineProvider / EngineService ──► :engine ──SCGI───────────────┘
+ TableroActivity (Compose) ──Tablero.get/post──► cl.tablero.backend ──SCGI──┐
+ otros equipos / TableroWebActivity ──HTTP :8090──┘                          ├─► rtorrent (socket Unix)
+ TableroActivity ──► EngineProvider / EngineService ──► :engine ──SCGI─────────┘
 ```
 
 - `cl.tablero.backend` no usa nada de Android: corre igual en la JVM. `tools/tablero-host` lo compila para Linux, y
@@ -56,7 +58,7 @@ se actualiza a esta sin perder nada. El APK ya no lleva Python.
     `network.max_open_sockets` por debajo de eso. Si había un 250 guardado, se sube a 512.
   - Descarga en orden y reproducción mientras baja (ver abajo).
   - El botón "Elegir con Android…" junto a Examinar… (ver abajo).
-- `versionCode` 9 y `versionName` `0.11-android.2-kotlin`: se instala encima del APK de `main` (8) con la misma firma.
+- `versionCode` 10 y `versionName` `0.11-android.3-kotlin`: se instala encima del APK de `main` (8) con la misma firma.
   Para volver al de `main` hay que desinstalar antes, porque Android no deja bajar de versión.
 
 ## Descarga en orden y reproducción mientras baja

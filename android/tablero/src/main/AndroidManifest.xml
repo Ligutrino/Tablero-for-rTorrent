@@ -41,6 +41,11 @@
                 <data android:mimeType="application/x-bittorrent" />
             </intent-filter>
         </activity>
+        <!-- La interfaz web de siempre, mientras la de Compose no tenga todo (botón del globo). -->
+        <activity
+            android:name=".TableroWebActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
+            android:exported="false" />
         <!-- Botones Pausar todo / Reanudar todo / Salir de la notificación (TableroAvisos) -->
         <receiver
             android:name=".TableroAcciones"

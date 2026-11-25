@@ -19,7 +19,8 @@ import kotlin.concurrent.thread
 /**
  * Corre el backend de Tablero (cl.tablero.backend, la misma API que tablero.py, en Kotlin) en un hilo
  * propio, atado a la vida del servicio en primer plano de :engine. Habla con rtorrent por el mismo
- * socket Unix que usa :engine y sirve la interfaz web/ desde los assets de la app.
+ * socket Unix que usa :engine y sirve la interfaz web/ desde los assets de la app (para el acceso desde
+ * la red; en el teléfono la interfaz es Compose, que llama a la misma API sin HTTP).
  * También pone la notificación del servicio (TableroAvisos), en lugar de la de :engine.
  */
 object TableroServidor : EngineServiceHook {
@@ -91,8 +92,12 @@ object TableroServidor : EngineServiceHook {
      */
     fun salir() {
         TableroActivity.cerrar()
+        TableroWebActivity.cerrar()
         thread(name = "tablero-salir") { detener() }
     }
+
+    /** El Tablero que corre ahora, para la interfaz Compose (en el mismo proceso, sin HTTP). */
+    @Synchronized fun actual(): Tablero? = tablero
 
     /** true cuando el servidor ya contesta (para reintentar la carga de la WebView). */
     fun responde(): Boolean = try {
