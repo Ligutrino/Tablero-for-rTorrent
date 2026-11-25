@@ -294,7 +294,7 @@ fun MenuTorrents(estado: Estado) {
         fun copy(text: String) { clip.setText(AnnotatedString(text)); estado.aviso("Copiado") }
 
         // La prioridad no va aquí: se cambia por torrent en la pestaña Opciones.
-        head("Descarga")
+        head("Archivos")
         if (ts.all { it.sequential != null }) {
             val on = ts.all { it.sequential == true }
             item("Descargar en orden", "list-ordered", check = on) {
@@ -302,8 +302,6 @@ fun MenuTorrents(estado: Estado) {
                     if (on) "Descarga normal (por rareza)" else "Descarga en orden: desde el principio, para ver o escuchar mientras baja")
             }()
         }
-        HorizontalDivider(color = c.line)
-        head("Archivos")
         if (ts.size == 1) item("Abrir carpeta", "folder-open") { estado.abrirCarpeta(ts[0].hash) }()
         item("Reubicar datos…", "folder") { estado.dialogo = Dialogo.Reubicar(hs) }()
         item("Renombrar carpeta…", "pencil", enabled = ts.size == 1 && ts[0].files >= 2) { estado.dialogo = Dialogo.RenombrarCarpeta(hs[0]) }()
