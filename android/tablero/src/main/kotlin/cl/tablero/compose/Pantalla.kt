@@ -1,5 +1,6 @@
 package cl.tablero.compose
 
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
@@ -260,76 +261,65 @@ private fun Velocidades(estado: Estado, lado: Boolean) {
 }
 
 /**
- * El menú de los torrents elegidos o del detalle abierto (rowMenu de la web): sale del botón Más, a la derecha de la
- * barra de acciones, con el mismo estilo que los demás menús. La prioridad no va aquí (pestaña Opciones de cada torrent).
+ * El menú Posición (#): el # solo ordena la lista (rTorrent no tiene cola de descargas), así que el botón aparece
+ * cuando la lista está ordenada por # y no hay un torrent abierto.
  */
 @Composable
-fun MenuTorrents(estado: Estado) {
+fun MenuPosicion(estado: Estado) {
     val c = LocalColores.current
-    val clip = LocalClipboardManager.current
-    val ts = estado.objetivo()
-    val hs = ts.map { it.hash }
-    DropdownMenu(expanded = estado.menu == "torrents" && ts.isNotEmpty(), onDismissRequest = { estado.menu = null }, containerColor = c.panel2) {
-        fun item(label: String, icon: String, enabled: Boolean = true, check: Boolean? = null, run: () -> Unit) = @Composable {
-            DropdownMenuItem(text = { Text(label) }, enabled = enabled, leadingIcon = { Icono(icon, size = 16.dp) },
-                trailingIcon = if (check == true) ({ Icono("check", size = 16.dp, tint = c.accent) }) else null,
-                onClick = { estado.menu = null; run() })
-        }
-        @Composable fun head(t: String) = Text(t, fontSize = 12.sp, color = c.dim, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-        fun copy(text: String) { clip.setText(AnnotatedString(text)); estado.aviso("Copiado") }
-
-        head("Archivos")
-        if (ts.size == 1) item("Abrir carpeta", "folder-open") { estado.abrirCarpeta(ts[0].hash) }()
-        item("Reubicar datos…", "folder") { estado.dialogo = Dialogo.Reubicar(hs) }()
-        item("Renombrar carpeta…", "pencil", enabled = ts.size == 1 && ts[0].files >= 2) { estado.dialogo = Dialogo.RenombrarCarpeta(hs[0]) }()
-        item("Verificar datos", "refresh-cw") {
-            estado.act("/api/action", mapOf("action" to "recheck", "hashes" to hs), "Verificación iniciada: se revisa cada pieza contra el .torrent")
-        }()
-        // El # solo ordena la lista (rTorrent no tiene cola de descargas): se ofrece cuando la lista está ordenada por #.
-        if (estado.detalle == null && estado.prefs.sort.col == "pos") {
-            HorizontalDivider(color = c.line)
-            head("Posición en la lista (#)")
-            for ((w, n, i) in listOf(Triple("top", "Al principio", "arrow-up-to-line"), Triple("up", "Subir", "arrow-up"), Triple("down", "Bajar", "arrow-down"), Triple("bottom", "Al final", "arrow-down-to-line"))) item(n, i) {
-                estado.act("/api/move", mapOf("hashes" to hs, "where" to w))
-            }()
-        }
-        // Con un torrent abierto, copiar está en la pestaña Archivos (botón Copiar).
-        if (estado.detalle == null) {
-            HorizontalDivider(color = c.line)
-            head("Copiar")
-            item(if (ts.size > 1) "Nombres" else "Nombre", "copy") { copy(ts.joinToString("\n") { it.name }) }()
-            item("Hash", "copy") { copy(ts.joinToString("\n") { it.hash }) }()
-            item("Enlace magnet", "magnet") { copy(ts.joinToString("\n") { magnetOf(it) }) }()
-        }
+    val hs = estado.objetivo().map { it.hash }
+    DropdownMenu(expanded = estado.menu == "posicion" && hs.isNotEmpty(), onDismissRequest = { estado.menu = null }, containerColor = c.panel2) {
+        Text("Posición en la lista (#)", fontSize = 12.sp, color = c.dim, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+        for ((w, n, i) in listOf(Triple("top", "Al principio", "arrow-up-to-line"), Triple("up", "Subir", "arrow-up"), Triple("down", "Bajar", "arrow-down"), Triple("bottom", "Al final", "arrow-down-to-line")))
+            DropdownMenuItem(text = { Text(n) }, leadingIcon = { Icono(i, size = 16.dp) }, onClick = {
+                estado.menu = null; estado.act("/api/move", mapOf("hashes" to hs, "where" to w))
+            })
     }
 }
 
-/** Iniciar, Pausar, Detener, Etiquetas y Eliminar, como la barra de arriba de la web. */
+/**
+ * Las acciones sobre los torrents elegidos o el abierto, todas a la vista: Iniciar, Pausar, Detener, Etiquetas, las de
+ * los datos (Abrir, Reubicar, Renombrar, Verificar), Posición si la lista va por # y Eliminar al final. Si no caben
+ * (teléfono), la barra se desplaza de lado.
+ */
 @Composable
 private fun BarraAcciones(estado: Estado) {
     val c = LocalColores.current
+    val ts = estado.objetivo()
+    val hs = { estado.objetivo().map { it.hash } }
+    val uno = ts.size == 1
+    val posicion = estado.detalle == null && estado.prefs.sort.col == "pos"
+    val n = 9 + (if (posicion) 1 else 0)
     BottomAppBar(containerColor = c.panel, contentPadding = PaddingValues(horizontal = 4.dp)) {
-        val hs = { estado.objetivo().map { it.hash } }
-        @Composable fun accion(icon: String, label: String, tint: Color = c.text, run: () -> Unit) {
-            Column(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable(onClick = run).padding(vertical = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally) {
-                Icono(icon, size = 22.dp, tint = tint)
-                Text(label, fontSize = 11.sp, color = tint)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val min = 68.dp
+            val cabe = maxWidth >= min * n
+            val ancho = if (cabe) maxWidth / n else min
+            Row(if (cabe) Modifier.fillMaxWidth() else Modifier.horizontalScroll(rememberScrollState())) {
+                @Composable fun accion(icon: String, label: String, tint: Color = c.text, enabled: Boolean = true, run: () -> Unit) {
+                    val t = if (enabled) tint else c.dim.copy(alpha = 0.5f)
+                    Column(Modifier.width(ancho).clip(RoundedCornerShape(8.dp)).clickable(enabled = enabled, onClick = run).padding(vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icono(icon, size = 22.dp, tint = t)
+                        Text(label, fontSize = 11.sp, color = t, maxLines = 1)
+                    }
+                }
+                accion("play", "Iniciar") { estado.act("/api/action", mapOf("action" to "start", "hashes" to hs())) }
+                accion("pause", "Pausar") { estado.act("/api/action", mapOf("action" to "pause", "hashes" to hs())) }
+                accion("square", "Detener") { estado.act("/api/action", mapOf("action" to "stop", "hashes" to hs())) }
+                accion("tag", "Etiquetas") { estado.dialogo = Dialogo.Etiquetas(hs()) }
+                accion("folder-open", "Abrir", enabled = uno) { estado.abrirCarpeta(ts[0].hash) }
+                accion("folder", "Reubicar") { estado.dialogo = Dialogo.Reubicar(hs()) }
+                accion("pencil", "Renombrar", enabled = uno && ts[0].files >= 2) { estado.dialogo = Dialogo.RenombrarCarpeta(ts[0].hash) }
+                accion("refresh-cw", "Verificar") {
+                    estado.act("/api/action", mapOf("action" to "recheck", "hashes" to hs()), "Verificación iniciada: se revisa cada pieza contra el .torrent")
+                }
+                if (posicion) Box {
+                    accion("list-ordered", "Posición") { estado.menu = "posicion" }
+                    MenuPosicion(estado)
+                }
+                accion("trash-2", "Eliminar", c.bad) { estado.dialogo = Dialogo.Eliminar(hs()) }
             }
-        }
-        accion("play", "Iniciar") { estado.act("/api/action", mapOf("action" to "start", "hashes" to hs())) }
-        accion("pause", "Pausar") { estado.act("/api/action", mapOf("action" to "pause", "hashes" to hs())) }
-        accion("square", "Detener") { estado.act("/api/action", mapOf("action" to "stop", "hashes" to hs())) }
-        accion("tag", "Etiquetas") { estado.dialogo = Dialogo.Etiquetas(hs()) }
-        accion("trash-2", "Eliminar", c.bad) { estado.dialogo = Dialogo.Eliminar(hs()) }
-        // El menú sale de aquí, cargado a la derecha.
-        Box(Modifier.weight(1f)) {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { estado.menu = "torrents" }.padding(vertical = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally) {
-                Icono("ellipsis-vertical", size = 22.dp, tint = c.text)
-                Text("Más", fontSize = 11.sp, color = c.text)
-            }
-            MenuTorrents(estado)
         }
     }
 }

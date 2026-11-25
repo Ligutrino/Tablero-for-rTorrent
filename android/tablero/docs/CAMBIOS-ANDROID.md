@@ -1,5 +1,12 @@
 # Cambios de la variante Android
 
+## 0.11-android.23-kotlin (25-11-2026, rama `kotlin`)
+
+- Sin el botón Más: la barra de abajo muestra Iniciar, Pausar, Detener, Etiquetas, Abrir, Reubicar, Renombrar, Verificar,
+  Posición (solo con la lista ordenada por #, abre Al principio/Subir/Bajar/Al final) y Eliminar. Lo que no aplica queda
+  apagado (Abrir con varios elegidos, Renombrar sin carpeta). Si no caben (teléfono) la barra se desplaza de lado.
+  Copiar sale del menú (está en la pestaña General).
+
 ## 0.11-android.22-kotlin (25-11-2026, rama `kotlin`)
 
 - Diálogos dibujados en la misma ventana de la app (capa encima de todo, con su fondo oscuro) en vez de una ventana

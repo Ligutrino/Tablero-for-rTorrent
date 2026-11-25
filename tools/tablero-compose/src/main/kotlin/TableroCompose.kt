@@ -188,10 +188,10 @@ fun main(args: Array<String>) {
             "grafico" -> { estado.grafico = true; frames(2500) }
             "cajon" -> estado.cajon = true
             "seleccion" -> estado.sel = rows.take(2).map { it.hash }.toSet()
-            "menu" -> { estado.sel = rows.take(2).map { it.hash }.toSet(); frames(200); estado.menu = "torrents" }
+            "menu" -> { estado.sel = rows.take(2).map { it.hash }.toSet(); frames(200); frames(100) }
             "menu-pos" -> {
                 estado.updatePrefs { it.copy(sort = cl.tablero.compose.Orden("pos", 1)) }; frames(300)
-                estado.sel = rows.take(2).map { it.hash }.toSet(); frames(200); estado.menu = "torrents"
+                estado.sel = rows.take(2).map { it.hash }.toSet(); frames(200); estado.menu = "posicion"
             }
             "etiquetas" -> { estado.sel = rows.take(2).map { it.hash }.toSet(); estado.dialogo = Dialogo.Etiquetas(rows.take(2).map { it.hash }) }
             "eliminar" -> { estado.sel = rows.take(1).map { it.hash }.toSet(); estado.dialogo = Dialogo.Eliminar(rows.take(1).map { it.hash }) }
@@ -209,7 +209,7 @@ fun main(args: Array<String>) {
                     theme = if (e == "general-claro") "light" else "dark") }
                 estado.abrirDetalle(d.hash)
                 frames(1200)
-                if (e == "menu-detalle") estado.menu = "torrents"
+                
             }
             "agregar-archivos" -> {
                 plataforma.elegibles = listOf(ArchivoLocal("patagonia.torrent", File(File(archivos).parentFile, "patagonia.torrent").path))
