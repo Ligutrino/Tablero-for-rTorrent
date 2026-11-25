@@ -235,7 +235,7 @@ fun ApagarDialogo(estado: Estado) {
             Marca("warn", "Reubicar datos sigue trabajando en ${if (busy.size == 1) busy[0].name else "${busy.size} torrents"}. " +
                 "Si apagas ahora, los archivos terminan de moverse, pero no se verifican ni se reanudan: al encender rTorrent, usa Verificar datos e Inicia el torrent.")
         }
-        Campo("Encenderlo") { Text("Después, con el botón \"Encender rTorrent\" del aviso de arriba de la lista.", fontSize = 14.sp, color = c.text) }
+        Campo("Encenderlo") { Text("Después, con el botón de encendido de arriba, que queda en rojo mientras rTorrent está apagado.", fontSize = 14.sp, color = c.text) }
     }
 }
 
@@ -311,13 +311,6 @@ fun OpcionesDialogo(estado: Estado) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("cada", fontSize = 14.sp); NumCampo(interval, { interval = it.take(2) }, modifier = Modifier.width(80.dp)); Text("segundos", fontSize = 14.sp)
             }
-        }
-        Campo("rTorrent") {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                BotonHerr("power", "Apagar rTorrent…") { estado.dialogo = Dialogo.Apagar }
-                BotonRtorrent(estado, "start")
-            }
-            Hint("Apagar lo cierra de forma normal: guarda la sesión y avisa a los rastreadores.")
         }
         Campo("Respaldo") {
             BotonHerr("archive", "Respaldo y restauración…") { estado.dialogo = Dialogo.Respaldos }

@@ -1,5 +1,12 @@
 # Cambios de la variante Android
 
+## 0.11-android.6-kotlin (25-11-2026, rama `kotlin`)
+
+- Se quita la sección Tablero de la barra lateral. Arriba a la derecha quedan el botón de encendido de rTorrent (verde
+  encendido, rojo apagado; apagar pide confirmar, encender no) y el engranaje, que ahora es un menú con Límites y
+  conexiones, el estado del puerto y Opciones. Respaldo y restauración sigue dentro de Opciones; los botones de
+  rTorrent salen de Opciones.
+
 ## 0.11-android.5-kotlin (25-11-2026, rama `kotlin`)
 
 Tercera ronda de Compose: ya tiene todo lo de la web y la app no lleva WebView (se quitaron el globo,

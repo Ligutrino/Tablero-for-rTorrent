@@ -157,8 +157,55 @@ private fun BarraSuperior(estado: Estado) {
             IconButton(onClick = { estado.menu = "orden" }) { Icono("arrow-up-down", size = 22.dp, desc = "Ordenar") }
             MenuOrden(estado)
         }
-        IconButton(onClick = { estado.dialogo = Dialogo.Opciones }) { Icono("settings", size = 22.dp, desc = "Opciones") }
+        BotonEncendido(estado)
+        Box {
+            IconButton(onClick = { estado.menu = "tablero" }) { Icono("settings", size = 22.dp, desc = "Opciones") }
+            MenuTablero(estado)
+        }
     })
+}
+
+/**
+ * rTorrent encendido (verde) o apagado (rojo). Encendido, el toque pide confirmar antes de apagar; apagado, lo enciende.
+ * Gris mientras no se sabe (al abrir, o con otro error).
+ */
+@Composable
+private fun BotonEncendido(estado: Estado) {
+    val c = LocalColores.current
+    val on = estado.conectado == true
+    val off = estado.sinRtorrent
+    IconButton(onClick = {
+        when {
+            on -> estado.dialogo = Dialogo.Apagar
+            else -> { estado.plataforma.encenderRtorrent(); estado.aviso("Encendiendo rTorrent…"); estado.launch { kotlinx.coroutines.delay(2500); estado.refresh() } }
+        }
+    }) {
+        Icono("power", size = 22.dp, tint = if (on) c.good else if (off) c.bad else c.dim,
+            desc = if (on) "rTorrent encendido: tocar para apagarlo" else "rTorrent apagado: tocar para encenderlo")
+    }
+}
+
+/** El engranaje: Límites y conexiones, el puerto y Opciones (donde está también Respaldo y restauración). */
+@Composable
+private fun MenuTablero(estado: Estado) {
+    val c = LocalColores.current
+    DropdownMenu(expanded = estado.menu == "tablero", onDismissRequest = { estado.menu = null }, containerColor = c.panel2) {
+        @Composable fun item(icon: String, label: String, tint: Color = c.text, d: Dialogo) =
+            DropdownMenuItem(text = { Text(label) }, leadingIcon = { Icono(icon, size = 16.dp, tint = tint) }, onClick = { estado.menu = null; estado.dialogo = d })
+        item("gauge", "Límites y conexiones", d = Dialogo.Limites)
+        val s = estado.stats
+        if (s.port > 0) {
+            val (cls, text) = estado.portState()
+            val next = estado.portNext()
+            item("circle", "Puerto ${s.port}: $text" + if (next != 0L) " · $next al reiniciar rTorrent" else "",
+                tint = when (cls) { "good" -> c.good; "bad" -> c.bad; "warn" -> c.warn; else -> c.dim }, d = Dialogo.Puerto)
+        }
+        item("settings", "Opciones", d = Dialogo.Opciones)
+        if (estado.version.isNotEmpty()) {
+            HorizontalDivider(color = c.line)
+            Text("Tablero ${estado.version}", fontSize = 11.sp, color = c.dim, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        }
+    }
 }
 
 /** Bajada y subida de rTorrent entero (la barra de estado de la web); ⁽ˡ⁾ cuando hay límite. */
@@ -410,24 +457,5 @@ private fun Filtros(estado: Estado) {
                 }
             }
         }
-        head("Tablero")
-        @Composable fun accion(icon: String, label: String, tint: Color = c.dim, dialogo: Dialogo) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(RoundedCornerShape(6.dp))
-                .clickable { estado.cajon = false; estado.dialogo = dialogo }.padding(horizontal = 10.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icono(icon, size = 16.dp, tint = tint); Text(label, fontSize = 14.sp)
-            }
-        }
-        accion("gauge", "Límites y conexiones", dialogo = Dialogo.Limites)
-        val s = estado.stats
-        if (s.port > 0) {
-            val (cls, text) = estado.portState()
-            val next = estado.portNext()
-            accion("circle", "Puerto ${s.port}: $text" + if (next != 0L) " · $next al reiniciar rTorrent" else "",
-                tint = when (cls) { "good" -> c.good; "bad" -> c.bad; "warn" -> c.warn; else -> c.dim }, dialogo = Dialogo.Puerto)
-        }
-        accion("archive", "Respaldo y restauración", dialogo = Dialogo.Respaldos)
-        accion("settings", "Opciones", dialogo = Dialogo.Opciones)
-        if (estado.version.isNotEmpty()) Text("Tablero ${estado.version}", fontSize = 11.sp, color = c.dim, modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
     }
 }

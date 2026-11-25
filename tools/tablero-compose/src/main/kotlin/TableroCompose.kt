@@ -210,6 +210,7 @@ fun main(args: Array<String>) {
                 plataforma.elegibles = listOf(ArchivoLocal("patagonia.torrent", File(File(archivos).parentFile, "patagonia.torrent").path))
                 estado.dialogo = Dialogo.Agregar(files = plataforma.elegibles); frames(1500)
             }
+            "menu-tablero" -> estado.menu = "tablero"
             "etiqueta" -> estado.dialogo = Dialogo.Etiqueta("Películas")
             "etiqueta-nueva" -> estado.dialogo = Dialogo.Etiqueta(null)
             "limites" -> { estado.dialogo = Dialogo.Limites; frames(1500) }
