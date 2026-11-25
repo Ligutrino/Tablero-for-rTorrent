@@ -1,5 +1,9 @@
 # Cambios de la variante Android
 
+## 0.11-android.13-kotlin (25-11-2026, rama `kotlin`)
+
+- Menú de los torrents: Verificar datos pasa a Archivos; en Posición, Al principio va primero.
+
 ## 0.11-android.12-kotlin (25-11-2026, rama `kotlin`)
 
 - Menú de los torrents ordenado por secciones: Descarga (en orden, verificar), Archivos (abrir carpeta, reubicar,

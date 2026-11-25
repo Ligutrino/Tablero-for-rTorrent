@@ -302,17 +302,17 @@ fun MenuTorrents(estado: Estado) {
                     if (on) "Descarga normal (por rareza)" else "Descarga en orden: desde el principio, para ver o escuchar mientras baja")
             }()
         }
-        item("Verificar datos", "refresh-cw") {
-            estado.act("/api/action", mapOf("action" to "recheck", "hashes" to hs), "Verificación iniciada: se revisa cada pieza contra el .torrent")
-        }()
         HorizontalDivider(color = c.line)
         head("Archivos")
         if (ts.size == 1) item("Abrir carpeta", "folder-open") { estado.abrirCarpeta(ts[0].hash) }()
         item("Reubicar datos…", "folder") { estado.dialogo = Dialogo.Reubicar(hs) }()
         item("Renombrar carpeta…", "pencil", enabled = ts.size == 1 && ts[0].files >= 2) { estado.dialogo = Dialogo.RenombrarCarpeta(hs[0]) }()
+        item("Verificar datos", "refresh-cw") {
+            estado.act("/api/action", mapOf("action" to "recheck", "hashes" to hs), "Verificación iniciada: se revisa cada pieza contra el .torrent")
+        }()
         HorizontalDivider(color = c.line)
         head("Posición en la cola (#)")
-        for ((w, n, i) in listOf(Triple("up", "Subir", "arrow-up"), Triple("down", "Bajar", "arrow-down"), Triple("top", "Al principio", "arrow-up-to-line"), Triple("bottom", "Al final", "arrow-down-to-line"))) item(n, i) {
+        for ((w, n, i) in listOf(Triple("top", "Al principio", "arrow-up-to-line"), Triple("up", "Subir", "arrow-up"), Triple("down", "Bajar", "arrow-down"), Triple("bottom", "Al final", "arrow-down-to-line"))) item(n, i) {
             estado.act("/api/move", mapOf("hashes" to hs, "where" to w))
         }()
         HorizontalDivider(color = c.line)
