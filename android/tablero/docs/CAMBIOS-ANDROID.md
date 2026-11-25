@@ -1,5 +1,11 @@
 # Cambios de la variante Android
 
+## 0.11-android.12-kotlin (25-11-2026, rama `kotlin`)
+
+- Menú de los torrents ordenado por secciones: Descarga (en orden, verificar), Archivos (abrir carpeta, reubicar,
+  renombrar carpeta), Posición en la cola, Copiar (nombre, identificador, magnet) y al final Quitar todas las etiquetas.
+  Sin la sección Prioridad: se cambia en la pestaña Opciones de cada torrent.
+
 ## 0.11-android.11-kotlin (25-11-2026, rama `kotlin`)
 
 - El botón + quedaba en parte bajo la barra de navegación del sistema (la barra de abajo vacía, de alto 0, le hacía

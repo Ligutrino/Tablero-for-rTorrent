@@ -293,16 +293,8 @@ fun MenuTorrents(estado: Estado) {
         @Composable fun head(t: String) = Text(t, fontSize = 12.sp, color = c.dim, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
         fun copy(text: String) { clip.setText(AnnotatedString(text)); estado.aviso("Copiado") }
 
-        head("Prioridad")
-        for ((v, n, i) in listOf(Triple(3, "Alta", "arrow-up"), Triple(2, "Normal", "circle"), Triple(1, "Baja", "arrow-down"))) item(n, i, check = ts.all { it.priority == v }) {
-            estado.act("/api/action", mapOf("action" to "priority", "hashes" to hs, "value" to v))
-        }()
-        HorizontalDivider(color = c.line)
-        head("Posición (#)")
-        for ((w, n, i) in listOf(Triple("up", "Subir", "arrow-up"), Triple("down", "Bajar", "arrow-down"), Triple("top", "Al principio", "arrow-up-to-line"), Triple("bottom", "Al final", "arrow-down-to-line"))) item(n, i) {
-            estado.act("/api/move", mapOf("hashes" to hs, "where" to w))
-        }()
-        HorizontalDivider(color = c.line)
+        // La prioridad no va aquí: se cambia por torrent en la pestaña Opciones.
+        head("Descarga")
         if (ts.all { it.sequential != null }) {
             val on = ts.all { it.sequential == true }
             item("Descargar en orden", "list-ordered", check = on) {
@@ -310,18 +302,28 @@ fun MenuTorrents(estado: Estado) {
                     if (on) "Descarga normal (por rareza)" else "Descarga en orden: desde el principio, para ver o escuchar mientras baja")
             }()
         }
-        if (ts.size == 1) item("Abrir carpeta", "folder-open") { estado.abrirCarpeta(ts[0].hash) }()
-        item("Reubicar datos…", "folder") { estado.dialogo = Dialogo.Reubicar(hs) }()
-        item("Renombrar carpeta…", "pencil", enabled = ts.size == 1 && ts[0].files >= 2) { estado.dialogo = Dialogo.RenombrarCarpeta(hs[0]) }()
         item("Verificar datos", "refresh-cw") {
             estado.act("/api/action", mapOf("action" to "recheck", "hashes" to hs), "Verificación iniciada: se revisa cada pieza contra el .torrent")
         }()
+        HorizontalDivider(color = c.line)
+        head("Archivos")
+        if (ts.size == 1) item("Abrir carpeta", "folder-open") { estado.abrirCarpeta(ts[0].hash) }()
+        item("Reubicar datos…", "folder") { estado.dialogo = Dialogo.Reubicar(hs) }()
+        item("Renombrar carpeta…", "pencil", enabled = ts.size == 1 && ts[0].files >= 2) { estado.dialogo = Dialogo.RenombrarCarpeta(hs[0]) }()
+        HorizontalDivider(color = c.line)
+        head("Posición en la cola (#)")
+        for ((w, n, i) in listOf(Triple("up", "Subir", "arrow-up"), Triple("down", "Bajar", "arrow-down"), Triple("top", "Al principio", "arrow-up-to-line"), Triple("bottom", "Al final", "arrow-down-to-line"))) item(n, i) {
+            estado.act("/api/move", mapOf("hashes" to hs, "where" to w))
+        }()
+        HorizontalDivider(color = c.line)
+        head("Copiar")
+        item(if (ts.size > 1) "Nombres" else "Nombre", "copy") { copy(ts.joinToString("\n") { it.name }) }()
+        item("Identificador", "copy") { copy(ts.joinToString("\n") { it.hash }) }()
+        item("Enlace magnet", "magnet") { copy(ts.joinToString("\n") { magnetOf(it) }) }()
+        HorizontalDivider(color = c.line)
         item("Quitar todas las etiquetas", "tag", enabled = ts.any { it.tags.isNotEmpty() }) {
             estado.act("/api/set-tags", mapOf("hashes" to hs, "tags" to emptyList<String>()))
         }()
-        item(if (ts.size > 1) "Copiar nombres" else "Copiar nombre", "copy") { copy(ts.joinToString("\n") { it.name }) }()
-        item("Copiar identificador", "copy") { copy(ts.joinToString("\n") { it.hash }) }()
-        item("Copiar enlace magnet", "magnet") { copy(ts.joinToString("\n") { magnetOf(it) }) }()
     }
 }
 
