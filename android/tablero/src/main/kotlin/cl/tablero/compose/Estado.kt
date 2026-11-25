@@ -166,6 +166,8 @@ class Estado(val api: Api, val plataforma: Plataforma, private val scope: Corout
     var dialogo by mutableStateOf<Dialogo?>(null)
     var buscando by mutableStateOf(false)
     var cajon by mutableStateOf(false)
+    /** El gráfico de velocidad abierto en la mitad de abajo de la lista. */
+    var grafico by mutableStateOf(false)
     var menu by mutableStateOf<String?>(null)
     /** El torrent cuyo detalle está abierto (sus pestañas), o null. */
     var detalle by mutableStateOf<String?>(null)

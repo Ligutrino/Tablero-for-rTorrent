@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -81,7 +82,13 @@ fun TableroPantalla(estado: Estado) {
             Scaffold(
                 containerColor = c.bg,
                 topBar = { if (det != null) BarraDetalle(estado, det) { MenuTorrents(estado) } else BarraSuperior(estado) },
-                bottomBar = { if (det != null || estado.sel.isNotEmpty()) BarraAcciones(estado) },
+                bottomBar = {
+                    // El gráfico de velocidad ocupa la mitad de abajo; el botón Agregar queda sobre él.
+                    Column {
+                        if (det == null && estado.grafico) PanelVelocidad(estado, Modifier.fillMaxWidth().fillMaxHeight(0.45f))
+                        if (det != null || estado.sel.isNotEmpty()) BarraAcciones(estado)
+                    }
+                },
                 floatingActionButton = {
                     if (det == null && estado.sel.isEmpty()) FloatingActionButton(onClick = { estado.dialogo = Dialogo.Agregar() }, containerColor = c.accent, contentColor = Color.White) {
                         Icono("plus", size = 24.dp, desc = "Agregar")
@@ -146,8 +153,8 @@ private fun BarraSuperior(estado: Estado) {
     TopAppBar(colors = colors, navigationIcon = {
         IconButton(onClick = { estado.cajon = true }) { Icono("menu", size = 22.dp, desc = "Filtros") }
     }, title = {
-        // Tocar las velocidades abre Límites y conexiones, como en la barra de estado de la web.
-        Velocidades(estado, Modifier.clickable { estado.dialogo = Dialogo.Limites })
+        // Tocar las velocidades abre o cierra el gráfico de velocidad abajo.
+        Velocidades(estado, Modifier.clickable { estado.grafico = !estado.grafico })
     }, actions = {
         // De izquierda a derecha: buscar, ordenar, límites, opciones, puerto y encendido (este queda en la esquina).
         BotonBarra("search", "Buscar") { estado.buscando = true }

@@ -1,5 +1,13 @@
 # Cambios de la variante Android
 
+## 0.11-android.8-kotlin (25-11-2026, rama `kotlin`)
+
+- El gráfico de velocidad sale de Límites y conexiones: tocar las velocidades de arriba abre (o cierra) un panel con el
+  gráfico en la mitad de abajo, bajo la lista.
+- Formularios parejos (`compose/Controles.kt`): campos, selectores y botones de 36 dp de alto; casillas y radios
+  alineados al borde, con el toque en toda la fila; todos los campos numéricos de 140 dp, a la derecha de su nombre;
+  un solo estilo de botón con ícono; 16 dp entre secciones. Los diálogos ocupan el ancho de la pantalla menos 16 dp.
+
 ## 0.11-android.7-kotlin (25-11-2026, rama `kotlin`)
 
 - Sin menú del engranaje: la barra superior lleva, de derecha a izquierda, encendido de rTorrent, puerto (del color de

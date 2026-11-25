@@ -67,12 +67,11 @@ fun Ruta(p: String, color: Color = LocalColores.current.text) = Text(p, fontSize
 
 /** Un número con su unidad al lado; vacío vale lo que diga [placeholder]. */
 @Composable
-fun NumCampo(v: String, onV: (String) -> Unit, suffix: String = "", placeholder: String? = null, decimal: Boolean = false, modifier: Modifier = Modifier.width(150.dp)) {
+fun NumCampo(v: String, onV: (String) -> Unit, suffix: String = "", placeholder: String? = null, decimal: Boolean = false, modifier: Modifier = Modifier.width(ANCHO_NUM)) {
     val c = LocalColores.current
-    OutlinedTextField(v, { s -> onV(s.filter { it.isDigit() || (decimal && (it == ',' || it == '.')) }) }, singleLine = true,
-        suffix = if (suffix.isEmpty()) null else ({ Text(suffix, fontSize = 12.sp, color = c.dim) }),
-        placeholder = placeholder?.let { { Text(it, color = c.dim) } },
-        keyboardOptions = KeyboardOptions(keyboardType = if (decimal) KeyboardType.Decimal else KeyboardType.Number), modifier = modifier)
+    CampoTexto(v, { s -> onV(s.filter { it.isDigit() || (decimal && (it == ',' || it == '.')) }) }, modifier,
+        placeholder = placeholder, suffix = suffix.ifEmpty { null },
+        keyboardOptions = KeyboardOptions(keyboardType = if (decimal) KeyboardType.Decimal else KeyboardType.Number))
 }
 
 fun numero(s: String): Double = s.trim().replace(',', '.').toDoubleOrNull() ?: 0.0
@@ -93,8 +92,7 @@ fun CarpetaCampo(estado: Estado, value: String, onChange: (String) -> Unit, plac
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        OutlinedTextField(value, onChange, singleLine = true, placeholder = { Text(placeholder, color = c.dim, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            modifier = Modifier.fillMaxWidth())
+        CampoTexto(value, onChange, placeholder = placeholder)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BotonHerr("folder", "Examinar…", on = panel != null) { if (panel != null) panel = null else browse(value) }
             if (estado.plataforma.tieneSelectorCarpetas) BotonHerr("folder-open", "Elegir con Android…") {

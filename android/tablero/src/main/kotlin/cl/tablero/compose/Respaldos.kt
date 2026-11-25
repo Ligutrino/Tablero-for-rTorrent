@@ -71,22 +71,14 @@ fun RespaldosDialogo(estado: Estado) {
         }
         Campo("Automático") {
             Seg(EVERY, every) { every = it }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("guardar los últimos", fontSize = 14.sp); NumCampo(keep, { keep = it.take(3) }, modifier = Modifier.width(80.dp))
-            }
+            FilaNum("Guardar los últimos") { NumCampo(keep, { keep = it.take(3) }, "respaldos") }
             Hint("Tablero hace el respaldo solo mientras está corriendo, y borra los automáticos más antiguos.")
         }
         Campo("Respaldos") {
             if (files.isEmpty()) Text("No hay respaldos en esta carpeta.", fontSize = 13.sp, color = c.dim)
-            Column(Modifier.clip(RoundedCornerShape(6.dp)).background(c.panel2)) {
-                for (f in files) {
-                    val p = str(f["path"])
-                    Row(Modifier.fillMaxWidth().clickable { chosen = p }.padding(end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(chosen == p, { chosen = p })
-                        Text(Formato.date(lng(f["time"])), fontSize = 14.sp, modifier = Modifier.weight(1f))
-                        Text(Formato.size(lng(f["size"])), fontSize = 13.sp, color = c.dim)
-                    }
-                }
+            for (f in files) {
+                val p = str(f["path"])
+                Opcion(chosen == p, { chosen = p }, Formato.date(lng(f["time"]))) { Text(Formato.size(lng(f["size"])), fontSize = 13.sp, color = c.dim) }
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 BotonHerr("archive", "Crear respaldo ahora") {
@@ -193,20 +185,17 @@ fun RestaurarDialogo(estado: Estado, path: String) {
         Campo("Qué restaurar") {
             for (p in parts) {
                 val k = p[0] as String; val avail = p[3] as Boolean
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(want[k] == true, { want[k] = it }, enabled = avail)
-                    Text(p[1] as String, fontSize = 14.sp, color = if (avail) c.text else c.dim)
-                }
+                Casilla(want[k] == true, { want[k] = it }, enabled = avail) { Text(p[1] as String, fontSize = 14.sp, color = if (avail) c.text else c.dim) }
             }
         }
         Campo("Carpetas") {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Cambiar", fontSize = 13.sp)
-                OutlinedTextField(from, { from = it }, singleLine = true, placeholder = { Text("/ruta/en/el/respaldo", color = c.dim) }, modifier = Modifier.weight(1f))
+                CampoTexto(from, { from = it }, Modifier.weight(1f), placeholder = "/ruta/en/el/respaldo")
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("por", fontSize = 13.sp)
-                OutlinedTextField(to, { to = it }, singleLine = true, placeholder = { Text(ANDROID_DIR, color = c.dim) }, modifier = Modifier.weight(1f))
+                CampoTexto(to, { to = it }, Modifier.weight(1f), placeholder = ANDROID_DIR)
             }
             for (f in folders) {
                 val found = lng(f["found"]); val count = lng(f["count"])

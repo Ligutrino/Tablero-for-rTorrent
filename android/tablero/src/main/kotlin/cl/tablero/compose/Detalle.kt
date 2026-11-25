@@ -1,5 +1,6 @@
 package cl.tablero.compose
 
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -174,11 +175,11 @@ private fun Placeholder(text: String) {
 @Composable
 fun Seg(options: List<Pair<String, String>>, value: String, onPick: (String) -> Unit) {
     val c = LocalColores.current
-    Row(Modifier.clip(RoundedCornerShape(6.dp)).border(1.dp, c.line, RoundedCornerShape(6.dp))) {
+    Row(Modifier.height(ALTO).clip(RoundedCornerShape(6.dp)).border(1.dp, c.line, RoundedCornerShape(6.dp))) {
         for ((v, n) in options) {
             val on = v == value
-            Text(n, fontSize = 13.sp, color = if (on) Color.White else c.text,
-                modifier = Modifier.background(if (on) c.accent else c.panel2).clickable { onPick(v) }.padding(horizontal = 10.dp, vertical = 6.dp))
+            Box(Modifier.fillMaxHeight().background(if (on) c.accent else c.panel2).clickable { onPick(v) }.padding(horizontal = 12.dp),
+                contentAlignment = Alignment.Center) { Text(n, fontSize = 14.sp, color = if (on) Color.White else c.text) }
         }
     }
 }
@@ -187,10 +188,11 @@ fun Seg(options: List<Pair<String, String>>, value: String, onPick: (String) -> 
 @Composable
 fun BotonHerr(icon: String, label: String? = null, on: Boolean = false, desc: String? = null, onClick: () -> Unit) {
     val c = LocalColores.current
-    Row(Modifier.clip(RoundedCornerShape(6.dp)).background(if (on) c.sel else c.panel2).clickable(onClick = onClick)
-        .padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.heightIn(min = ALTO).clip(RoundedCornerShape(6.dp)).border(1.dp, c.line, RoundedCornerShape(6.dp))
+        .background(if (on) c.sel else c.panel2).clickable(onClick = onClick)
+        .padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Icono(icon, size = 16.dp, tint = c.text, desc = desc ?: label)
-        if (label != null) Text(label, fontSize = 13.sp, color = c.text)
+        if (label != null) Text(label, fontSize = 14.sp, color = c.text)
     }
 }
 
@@ -653,8 +655,7 @@ fun RastreadoresDialogo(estado: Estado, hash: String) {
         }
     }) {
         NombresTorrents(listOf(t))
-        OutlinedTextField(urls, { urls = it }, minLines = 4, label = { Text("Rastreadores") },
-            placeholder = { Text("udp://tracker.ejemplo.org:1337/announce") }, modifier = Modifier.fillMaxWidth())
+        CampoTexto(urls, { urls = it }, singleLine = false, minHeight = 110.dp, placeholder = "udp://tracker.ejemplo.org:1337/announce")
         Hint("Una dirección por línea (http, https o udp). Las que el torrent ya tiene se omiten. Quedan guardadas en la sesión de rTorrent.")
     }
 }
@@ -963,57 +964,37 @@ private fun Opciones(estado: Estado, t: Torrent) {
             Hint(help)
         }
     }
-    @Composable fun campo(label: String, v: String, onV: (String) -> Unit, suffix: String, placeholder: String? = null, modifier: Modifier = Modifier) {
-        // El nombre va arriba y no como label: así el valor general (placeholder) se ve aunque el campo esté vacío.
-        Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (label.isNotEmpty()) Text(label, fontSize = 12.sp, color = c.dim)
-            OutlinedTextField(v, { s -> onV(s.filter { it.isDigit() || it == ',' || it == '.' }) }, singleLine = true,
-                suffix = { Text(suffix, fontSize = 12.sp, color = c.dim) }, placeholder = placeholder?.let { { Text(it, color = c.dim) } },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-        }
-    }
+    // El nombre a la izquierda y no como label: así el valor general (placeholder) se ve aunque el campo esté vacío.
+    @Composable fun campo(label: String, v: String, onV: (String) -> Unit, suffix: String, placeholder: String? = null) =
+        FilaNum(label) { NumCampo(v, onV, suffix, placeholder, decimal = true) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         seccion("Prioridad", OPT_HELP.getValue("priority")) {
             Seg(listOf("3" to "Alta", "2" to "Normal", "1" to "Baja", "0" to "Desactivada"), f.prio.toString()) { f.prio = it.toInt() }
         }
         seccion("Velocidad", OPT_HELP.getValue("speed")) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                campo("Bajada máxima", f.down, { f.down = it }, unit, modifier = Modifier.weight(1f))
-                campo("Subida máxima", f.up, { f.up = it }, unit, modifier = Modifier.weight(1f))
-            }
+            campo("Bajada máxima", f.down, { f.down = it }, unit)
+            campo("Subida máxima", f.up, { f.up = it }, unit)
         }
         seccion("Conexiones", OPT_HELP.getValue("peers") + " " + OPT_HELP.getValue("uploads")) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                campo("Pares máximos", f.pmax, { f.pmax = it.filter(Char::isDigit) }, "pares", generalPeer(g, "peers_max")?.toString(), Modifier.weight(1f))
-                campo("Pares mínimos", f.pmin, { f.pmin = it.filter(Char::isDigit) }, "pares", generalPeer(g, "peers_min")?.toString(), Modifier.weight(1f))
-            }
-            campo("Subidas simultáneas", f.umax, { f.umax = it.filter(Char::isDigit) }, "pares", generalPeer(g, "uploads_max")?.toString(), Modifier.fillMaxWidth(0.5f))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                BotonHerr("rotate-ccw", "Usar general") { f.pmax = ""; f.pmin = ""; f.umax = "" }
-            }
+            campo("Pares máximos", f.pmax, { f.pmax = it.filter(Char::isDigit) }, "pares", generalPeer(g, "peers_max")?.toString())
+            campo("Pares mínimos", f.pmin, { f.pmin = it.filter(Char::isDigit) }, "pares", generalPeer(g, "peers_min")?.toString())
+            campo("Subidas simultáneas", f.umax, { f.umax = it.filter(Char::isDigit) }, "pares", generalPeer(g, "uploads_max")?.toString())
+            BotonHerr("rotate-ccw", "Usar general") { f.pmax = ""; f.pmin = ""; f.umax = "" }
             Hint(OPT_HELP.getValue("general"))
         }
         seccion("Al sembrar", OPT_HELP.getValue("seed")) {
             Seg(listOf("0" to "General", "1" to "Propia de este torrent"), if (f.own) "1" else "0") { f.own = it == "1" }
             if (!f.own) Hint(seedRuleText(g.general) + ". Se cambia en Límites y conexiones.")
             else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(f.rOn, { f.rOn = it })
-                    Text("Detener al llegar a una proporción de subida de", fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    campo("", f.ratio, { f.ratio = it }, "", modifier = Modifier.width(90.dp))
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(f.hOn, { f.hOn = it })
-                    Text("Detener después de", fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    campo("", f.hours, { f.hours = it }, "horas", modifier = Modifier.width(120.dp))
-                }
+                FilaCasillaNum(f.rOn, { f.rOn = it }, "Detener al llegar a una proporción de subida de") { NumCampo(f.ratio, { f.ratio = it }, decimal = true) }
+                FilaCasillaNum(f.hOn, { f.hOn = it }, "Detener después de") { NumCampo(f.hours, { f.hours = it }, "horas", decimal = true) }
             }
             if (bool(t.opts["rule_done"])) Hint("Este torrent ya se detuvo una vez por su regla de siembra.")
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             if (aplicando) Text("Aplicando…", fontSize = 13.sp, color = c.dim)
-            OutlinedButton(onClick = { vuelta++ }, border = BorderStroke(1.dp, c.line)) { Text("Deshacer cambios") }
-            Button(enabled = !aplicando, onClick = {
+            BotonHerr("rotate-ccw", "Deshacer cambios") { vuelta++ }
+            Button(enabled = !aplicando, modifier = Modifier.height(ALTO), shape = RoundedCornerShape(6.dp), contentPadding = PaddingValues(horizontal = 16.dp), onClick = {
                 val own = { s: String -> if (s.trim().isEmpty()) null else max(0L, num(s).roundToInt().toLong()) }
                 val options = linkedMapOf<String, Any?>(
                     "priority" to f.prio, "down_limit" to (num(f.down) * Formato.kb()).toLong(), "up_limit" to (num(f.up) * Formato.kb()).toLong(),

@@ -1,5 +1,8 @@
 package cl.tablero.compose
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -97,8 +100,11 @@ fun Ventana(
     val yo = estado.dialogo
     AlertDialog(
         onDismissRequest = { onCancel(); estado.dialogo = null },
+        // Más ancho que el de Material (que deja los formularios muy angostos en un teléfono): el ancho menos 16 dp por lado.
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).widthIn(max = 560.dp),
         title = { Text(title, fontSize = 18.sp) },
-        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) { body() } },
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) { body() } },
         confirmButton = {
             if (ok != null) TextButton(enabled = !busy, onClick = {
                 busy = true
@@ -126,10 +132,7 @@ fun NombresTorrents(ts: List<Torrent>) {
 
 @Composable
 fun CheckFila(checked: Boolean, onChange: (Boolean) -> Unit, label: @Composable () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Checkbox(checked, onChange)
-        label()
-    }
+    Casilla(checked, onChange) { label() }
 }
 
 @Composable
@@ -160,10 +163,7 @@ fun SelectorEtiquetas(estado: Estado, marcas: MutableMap<String, ToggleableState
     Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
         for (x in names) {
             val st = marcas[x] ?: ToggleableState.Off
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                TriStateCheckbox(st, onClick = { marcas[x] = if (st == ToggleableState.On) ToggleableState.Off else ToggleableState.On })
-                Chip(estado, x)
-            }
+            CasillaTri(st, { marcas[x] = if (st == ToggleableState.On) ToggleableState.Off else ToggleableState.On }) { Chip(estado, x) }
         }
     }
     var nueva by remember { mutableStateOf("") }
@@ -174,10 +174,12 @@ fun SelectorEtiquetas(estado: Estado, marcas: MutableMap<String, ToggleableState
         marcas[n] = ToggleableState.On
         nueva = ""
     }
-    OutlinedTextField(nueva, { nueva = it }, Modifier.fillMaxWidth(), singleLine = true,
-        placeholder = { Text("Nueva etiqueta") },
+    CampoTexto(nueva, { nueva = it }, placeholder = "Nueva etiqueta",
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { agregar() }),
-        trailingIcon = { TextButton(onClick = { agregar() }, enabled = nueva.isNotBlank()) { Text("Agregar") } })
+        trailing = {
+            Text("Agregar", fontSize = 14.sp, color = if (nueva.isNotBlank()) LocalColores.current.accent else LocalColores.current.dim,
+                modifier = Modifier.clickable(enabled = nueva.isNotBlank()) { agregar() }.padding(horizontal = 10.dp, vertical = 8.dp))
+        })
 }
 
 @Composable

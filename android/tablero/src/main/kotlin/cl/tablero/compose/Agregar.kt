@@ -136,7 +136,7 @@ fun AgregarDialogo(estado: Estado, d: Dialogo.Agregar) {
             picked.forEachIndexed { k, t -> ContenidoTorrent(t, k, tree, closed) { picked.remove(t) } }
         }
         Campo("Enlaces magnet") {
-            OutlinedTextField(magnets, { magnets = it }, Modifier.fillMaxWidth().heightIn(min = 96.dp), placeholder = { Text("magnet:?xt=urn:btih:…") })
+            CampoTexto(magnets, { magnets = it }, singleLine = false, minHeight = 96.dp, placeholder = "magnet:?xt=urn:btih:…")
             Hint("Enlaces magnet o URL de archivos .torrent, uno por línea.")
         }
         Campo("Carpeta") {

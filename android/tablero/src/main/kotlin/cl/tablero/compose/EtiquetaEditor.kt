@@ -145,7 +145,7 @@ fun EtiquetaDialogo(estado: Estado, old: String?) {
         if (old != null) TextButton(onClick = { estado.dialogo = Dialogo.EliminarEtiqueta(old) }) { Text("Eliminar", color = c.bad) }
     }) {
         Campo("Nombre") {
-            OutlinedTextField(name, { name = it; unir = false }, singleLine = true, placeholder = { Text("Por ejemplo: Blu-ray UHD", color = c.dim) }, modifier = Modifier.fillMaxWidth())
+            CampoTexto(name, { name = it; unir = false }, placeholder = "Por ejemplo: Blu-ray UHD")
             if (unir) Marca("warn", "\"${name.trim()}\" ya existe. Toca Unir y guardar para juntar ambas etiquetas.")
         }
         Campo("Color") {
@@ -156,8 +156,7 @@ fun EtiquetaDialogo(estado: Estado, old: String?) {
             var otro by remember { mutableStateOf(color) }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Otro…", fontSize = 13.sp, color = c.dim)
-                OutlinedTextField(otro, { v -> otro = v; if (hexColor.matches(v.trim())) color = v.trim().lowercase() }, singleLine = true,
-                    placeholder = { Text("#rrggbb", color = c.dim) }, modifier = Modifier.width(140.dp))
+                CampoTexto(otro, { v -> otro = v; if (hexColor.matches(v.trim())) color = v.trim().lowercase() }, Modifier.width(140.dp), placeholder = "#rrggbb")
                 Box(Modifier.size(28.dp).clip(RoundedCornerShape(6.dp)).background(hex(color)))
             }
         }

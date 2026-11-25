@@ -177,14 +177,15 @@ fun main(args: Array<String>) {
     while (estado.conectado == null && waited < 100) { Thread.sleep(100); waited++ }
     Thread.sleep(500)
     val rows = estado.rows()
-    val escenas = (a["--escena"] ?: "lista,cajon,seleccion,menu,etiquetas,eliminar,orden,buscar,claro,agregar,campos,general,archivos,lista-archivos,pares,rastreadores,piezas,velocidad,total,opciones,menu-detalle,general-claro,agregar-archivos,etiqueta,etiqueta-nueva,limites,puerto,ajustes,apagar,respaldos,reubicar,renombrar,duplicados").split(',')
+    val escenas = (a["--escena"] ?: "lista,grafico,cajon,seleccion,menu,etiquetas,eliminar,orden,buscar,claro,agregar,campos,general,archivos,lista-archivos,pares,rastreadores,piezas,velocidad,total,opciones,menu-detalle,general-claro,agregar-archivos,etiqueta,etiqueta-nueva,limites,puerto,ajustes,apagar,respaldos,reubicar,renombrar,duplicados").split(',')
     for (e in escenas) {
-        estado.sel = emptySet(); estado.dialogo = null; estado.menu = null; estado.cajon = false; estado.buscando = false
+        estado.sel = emptySet(); estado.dialogo = null; estado.menu = null; estado.cajon = false; estado.buscando = false; estado.grafico = false
         estado.filtro = cl.tablero.compose.Filtro(); estado.detalle = null
         if (estado.prefs.theme != "dark") estado.updatePrefs { it.copy(theme = "dark") }
         frames(400)
         when (e) {
             "lista" -> {}
+            "grafico" -> { estado.grafico = true; frames(2500) }
             "cajon" -> estado.cajon = true
             "seleccion" -> estado.sel = rows.take(2).map { it.hash }.toSet()
             "menu" -> { estado.sel = rows.take(2).map { it.hash }.toSet(); frames(200); estado.menu = "torrents" }

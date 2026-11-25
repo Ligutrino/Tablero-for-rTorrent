@@ -21,7 +21,7 @@ import kotlin.concurrent.thread
 
 /** Las variables globales de tablero.py (PLATFORM, USER_FILES, RTORRENT_RC...). */
 object Tab {
-    const val VERSION = "0.11-android.7-kotlin"
+    const val VERSION = "0.11-android.8-kotlin"
     @Volatile var platform = "desktop"
     @Volatile var userFilesDir: String? = null
     @Volatile var rtorrentRc: String? = null

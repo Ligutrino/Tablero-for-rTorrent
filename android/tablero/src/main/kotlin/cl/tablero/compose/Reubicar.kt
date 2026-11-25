@@ -48,20 +48,11 @@ fun ReubicarDialogo(estado: Estado, hashes: List<String>) {
             for ((v, t, d) in listOf(
                 Triple(true, "Mover los archivos a la nueva carpeta", "Se copian a la nueva ubicación y se borran de la anterior. Entre discos distintos puede tardar."),
                 Triple(false, "Los archivos ya están en la nueva carpeta", "Solo cambia dónde los busca el torrent y los verifica. Útil si los moviste tú o cambió el disco."),
-            )) Row(Modifier.fillMaxWidth().clickable { move = v }, verticalAlignment = Alignment.Top) {
-                RadioButton(move == v, { move = v })
-                Column(Modifier.padding(top = 10.dp)) {
-                    Text(t, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Text(d, fontSize = 12.sp, color = c.dim)
-                }
-            }
+            )) Opcion(move == v, { move = v }, t, d)
         }
         Campo("Al terminar") {
             // Al ubicar siempre se verifica: la casilla lo muestra y no se puede quitar.
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(if (move) wantCheck else true, { wantCheck = it }, enabled = move)
-                Text("Verificar los datos", fontSize = 14.sp, color = if (move) c.text else c.dim)
-            }
+            Casilla(if (move) wantCheck else true, { wantCheck = it }, enabled = move) { Text("Verificar los datos", fontSize = 14.sp, color = if (move) c.text else c.dim) }
             Hint("El torrent queda detenido mientras tanto y se reanuda solo al terminar, si estaba activo.")
         }
     }
@@ -91,7 +82,7 @@ fun RenombrarCarpetaDialogo(estado: Estado, hash: String) {
         NombresTorrents(listOf(t))
         Campo("Carpeta actual") { Ruta(cur) }
         Campo("Nombre nuevo") {
-            OutlinedTextField(name, { name = it }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            CampoTexto(name, { name = it })
             Hint("Se renombra en el disco la carpeta que trae el torrent, dentro de $parent. Los archivos de adentro no cambian y no hace falta verificarlos. " +
                 "El nombre del torrent en la lista sigue igual. Si está activo, se detiene un momento y se reanuda solo.")
         }

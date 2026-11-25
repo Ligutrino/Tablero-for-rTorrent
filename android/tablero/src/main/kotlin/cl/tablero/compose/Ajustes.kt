@@ -1,5 +1,10 @@
 package cl.tablero.compose
 
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -66,14 +71,6 @@ fun LimitesDialogo(estado: Estado) {
     var hOn by remember { mutableStateOf(dbl(gen["stop_hours"]) != 0.0) }
     var ratio by remember { mutableStateOf(dbl(gen["stop_ratio"]).takeIf { it != 0.0 }?.let { Formato.n1(it).removeSuffix(",0") } ?: "2") }
     var hours by remember { mutableStateOf(dbl(gen["stop_hours"]).takeIf { it != 0.0 }?.let { Formato.n1(it).removeSuffix(",0") } ?: "24") }
-    // El gráfico de todos los torrents juntos, el mismo de la pestaña Velocidad en Total.
-    var samples by remember { mutableStateOf<List<LongArray>>(emptyList()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            try { samples = Historia.from("total", estado.api.get("/api/history")).samples } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e }
-            delay(maxOf(1, estado.prefs.interval) * 1000L)
-        }
-    }
     val unit = Formato.units()[1] + "/s"
     Ventana(estado, "Límites y conexiones", "Aplicar", onOk = {
         fun peer(v: String) = if (v.trim().isEmpty()) null else maxOf(0L, numero(v).toLong())
@@ -90,51 +87,21 @@ fun LimitesDialogo(estado: Estado) {
         }
     }) {
         Campo("Velocidad") {
-            Seg(SPEED_RANGES.map { it.first.toString() to it.second }, estado.prefs.speedRange.toString()) { v -> estado.updatePrefs { it.copy(speedRange = v.toInt()) } }
-            val last = samples.lastOrNull()
-            val series = listOf("down", "up") + (if (last != null && last.size > 3 && last[3] > 0) listOf("dlim") else emptyList()) +
-                (if (last != null && last.size > 4 && last[4] > 0) listOf("ulim") else emptyList())
-            if (last != null) FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("↓ " + Formato.rate(last[1]).ifEmpty { "0 B/s" }, fontSize = 13.sp, color = c.spDown, fontWeight = FontWeight.Medium)
-                Text("↑ " + Formato.rate(last[2]).ifEmpty { "0 B/s" }, fontSize = 13.sp, color = c.spUp, fontWeight = FontWeight.Medium)
-            }
-            if (samples.size < 2) Hint("Juntando datos…")
-            else Grafico(samples, series, estado.prefs.speedRange, Modifier.fillMaxWidth().height(200.dp))
-            Hint("Bajada y subida de todos los torrents juntos; las líneas cortadas son los límites actuales. Cada torrent tiene su propio gráfico en la pestaña Velocidad.")
-        }
-        Campo("Bajada máxima") { NumCampo(down, { down = it }, unit) }
-        Campo("Subida máxima") {
-            NumCampo(up, { up = it }, unit)
+            FilaNum("Bajada máxima") { NumCampo(down, { down = it }, unit) }
+            FilaNum("Subida máxima") { NumCampo(up, { up = it }, unit) }
             Hint("0 = sin límite. Se aplica a todos los torrents juntos; cada torrent puede tener su propio límite en la pestaña Opciones.")
         }
         Campo("Conexiones") {
-            Text("En total", fontSize = 12.sp, color = c.dim)
-            NumCampo(sockets, { sockets = it }, "conexiones", gg.rtorrent["max_sockets"]?.let { lng(it).toString() }, modifier = Modifier.width(200.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Column(Modifier.weight(1f)) {
-                    Text("Pares por torrent", fontSize = 12.sp, color = c.dim)
-                    NumCampo(pmax, { pmax = it }, "pares", gg.torrent["peers_max"]?.let { lng(it).toString() }, modifier = Modifier.fillMaxWidth())
-                }
-                Column(Modifier.weight(1f)) {
-                    Text("Subidas por torrent", fontSize = 12.sp, color = c.dim)
-                    NumCampo(umax, { umax = it }, "pares", gg.torrent["uploads_max"]?.let { lng(it).toString() }, modifier = Modifier.fillMaxWidth())
-                }
-            }
+            FilaNum("En total") { NumCampo(sockets, { sockets = it }, "conexiones", gg.rtorrent["max_sockets"]?.let { lng(it).toString() }) }
+            FilaNum("Pares por torrent") { NumCampo(pmax, { pmax = it }, "pares", gg.torrent["peers_max"]?.let { lng(it).toString() }) }
+            FilaNum("Subidas por torrent") { NumCampo(umax, { umax = it }, "pares", gg.torrent["uploads_max"]?.let { lng(it).toString() }) }
             Hint("\"En total\" es para todos los torrents juntos y evita que muchas conexiones llenen el router y pongan lento el internet del resto de la casa. " +
                 "Pares y subidas por torrent valen para cada torrent sin valores propios en su pestaña Opciones; el mínimo de pares es la mitad. " +
                 "Vienen con 512 en total (lo mínimo que acepta rTorrent) y los valores de BiglyBT por torrent (50 y 4). Vacío = lo que diga rTorrent, en gris.")
         }
         Campo("Al sembrar") {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(rOn, { rOn = it })
-                Text("Detener al llegar a una proporción de subida de", fontSize = 14.sp, modifier = Modifier.weight(1f))
-                NumCampo(ratio, { ratio = it }, decimal = true, modifier = Modifier.width(80.dp))
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(hOn, { hOn = it })
-                Text("Detener después de", fontSize = 14.sp, modifier = Modifier.weight(1f))
-                NumCampo(hours, { hours = it }, "horas", decimal = true, modifier = Modifier.width(120.dp))
-            }
+            FilaCasillaNum(rOn, { rOn = it }, "Detener al llegar a una proporción de subida de") { NumCampo(ratio, { ratio = it }, decimal = true) }
+            FilaCasillaNum(hOn, { hOn = it }, "Detener después de") { NumCampo(hours, { hours = it }, "horas", decimal = true) }
             Hint("Tablero detiene cada torrent completo que cumpla la condición, salvo los que tienen su propia regla en la pestaña Opciones. Funciona mientras Tablero esté corriendo.")
         }
     }
@@ -165,7 +132,7 @@ fun PuertoDialogo(estado: Estado) {
         }
         Campo("Cambiar puerto") {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                NumCampo(nuevo, { nuevo = it }, modifier = Modifier.width(130.dp))
+                NumCampo(nuevo, { nuevo = it })
                 BotonHerr("check", "Cambiar") {
                     setRes = "" to "Guardando…"; setRestart = false
                     estado.launch {
@@ -290,27 +257,17 @@ fun OpcionesDialogo(estado: Estado) {
             CheckFila(tagbar, { tagbar = it }) { Text("Mostrar la barra de etiquetas sobre la lista", fontSize = 14.sp) }
         }
         Campo("Filtro") {
-            Column {
-                for ((v, n) in listOf("any" to "Mostrar torrents con cualquiera de las etiquetas elegidas", "all" to "Mostrar solo torrents con todas las etiquetas elegidas"))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.RadioButton(mode == v, { mode = v }); Text(n, fontSize = 14.sp)
-                    }
-            }
+            for ((v, n) in listOf("any" to "Mostrar torrents con cualquiera de las etiquetas elegidas", "all" to "Mostrar solo torrents con todas las etiquetas elegidas"))
+                Opcion(mode == v, { mode = v }, n)
             Hint("Cuando filtras por varias etiquetas a la vez (toque largo en una etiqueta y Agregar al filtro).")
         }
         Campo("Unidades") {
-            Column {
-                for ((v, n) in listOf("bin" to "Binarias: KiB, MiB, GiB", "dec" to "Decimales: KB, MB, GB"))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.RadioButton(units == v, { units = v }); Text(n, fontSize = 14.sp)
-                    }
-            }
+            for ((v, n) in listOf("bin" to "Binarias: KiB, MiB, GiB", "dec" to "Decimales: KB, MB, GB"))
+                Opcion(units == v, { units = v }, n)
             Hint("Para tamaños, velocidades y límites. Binarias: 1 KiB = 1024 bytes, como cuenta rTorrent. Decimales: 1 KB = 1000 bytes, como los discos y la mayoría de las páginas.")
         }
         Campo("Actualizar") {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("cada", fontSize = 14.sp); NumCampo(interval, { interval = it.take(2) }, modifier = Modifier.width(80.dp)); Text("segundos", fontSize = 14.sp)
-            }
+            FilaNum("Cada") { NumCampo(interval, { interval = it.take(2) }, "segundos") }
         }
         Campo("Respaldo") {
             BotonHerr("archive", "Respaldo y restauración…") { estado.dialogo = Dialogo.Respaldos }
@@ -320,10 +277,9 @@ fun OpcionesDialogo(estado: Estado) {
             val n = net
             val local = n != null && bool(n["local"])
             CheckFila(lan, { if (local) lan = it }) { Text("Permitir abrir Tablero desde otros equipos de la red", fontSize = 14.sp) }
-            if (n != null && (lan || bool(n["password"]))) OutlinedTextField(pw, { pw = it }, singleLine = true, enabled = local,
-                placeholder = { Text(if (bool(n["password"])) "Contraseña (vacío = no cambiarla)" else "Contraseña (al menos 6 caracteres)", color = c.dim) },
-                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                modifier = Modifier.fillMaxWidth())
+            if (n != null && (lan || bool(n["password"]))) CampoTexto(pw, { pw = it }, enabled = local,
+                placeholder = if (bool(n["password"])) "Contraseña (vacío = no cambiarla)" else "Contraseña (al menos 6 caracteres)",
+                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
             if (n != null) {
                 val url = "http://${str(n["ip"]).ifEmpty { "IP-de-este-equipo" }}:${lng(n["port"])}"
                 if (!local) Hint("Solo se cambia en el teléfono/tableta donde corre Tablero.")
@@ -335,10 +291,39 @@ fun OpcionesDialogo(estado: Estado) {
             }
         }
         Campo("Importar") {
-            OutlinedTextField(import, { import = it }, Modifier.fillMaxWidth().heightIn(min = 80.dp),
-                placeholder = { Text("{\"Películas\":{\"color\":\"#e53935\",\"icon\":\"🎬\"}}", color = c.dim) })
+            CampoTexto(import, { import = it }, singleLine = false, minHeight = 80.dp,
+                placeholder = "{\"Películas\":{\"color\":\"#e53935\",\"icon\":\"🎬\"}}")
             Hint("Colores del plugin labelcolors de ruTorrent: pega el valor de webui.labelcolors.map.")
         }
         if (estado.version.isNotEmpty()) Text("Tablero ${estado.version}", fontSize = 11.sp, color = c.dim)
+    }
+}
+
+/**
+ * El gráfico de bajada y subida de todos los torrents juntos (el de la pestaña Velocidad en Total), en la mitad de
+ * abajo de la pantalla. Se abre y se cierra tocando las velocidades de la barra superior.
+ */
+@Composable
+fun PanelVelocidad(estado: Estado, modifier: Modifier = Modifier) {
+    val c = LocalColores.current
+    var samples by remember { mutableStateOf<List<LongArray>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            try { samples = Historia.from("total", estado.api.get("/api/history")).samples } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e }
+            delay(maxOf(1, estado.prefs.interval) * 1000L)
+        }
+    }
+    Column(modifier.background(c.panel).padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        HorizontalDivider(color = c.line)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Seg(SPEED_RANGES.map { it.first.toString() to it.second }, estado.prefs.speedRange.toString()) { v -> estado.updatePrefs { it.copy(speedRange = v.toInt()) } }
+            Spacer(Modifier.weight(1f))
+            androidx.compose.material3.IconButton(onClick = { estado.grafico = false }, modifier = Modifier.size(36.dp)) { Icono("x", size = 20.dp, desc = "Cerrar el gráfico") }
+        }
+        val last = samples.lastOrNull()
+        val series = listOf("down", "up") + (if (last != null && last.size > 3 && last[3] > 0) listOf("dlim") else emptyList()) +
+            (if (last != null && last.size > 4 && last[4] > 0) listOf("ulim") else emptyList())
+        if (samples.size < 2) Hint("Juntando datos…")
+        else Grafico(samples, series, estado.prefs.speedRange, Modifier.fillMaxWidth().weight(1f))
     }
 }
