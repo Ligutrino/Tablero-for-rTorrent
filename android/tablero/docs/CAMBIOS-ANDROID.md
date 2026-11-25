@@ -1,5 +1,14 @@
 # Cambios de la variante Android
 
+## 0.11-android.4-kotlin (25-11-2026, rama `kotlin`)
+
+Segunda ronda de Compose: tocar un torrent (sin nada elegido) abre su detalle a pantalla completa, con las
+pestañas de la web: General (mapa de piezas, disponibilidad, datos, abrir carpeta), Archivos (árbol o lista,
+ocultar los omitidos, prioridad por archivo o carpeta, reproducir mientras baja, mostrar en la carpeta),
+Pares, Rastreadores (agregar rastreadores), Piezas (tocar un cuadro muestra sus piezas), Velocidad (del
+torrent o total, 5 min / 30 min / 1 h; tocar o arrastrar muestra un instante) y Opciones. Las tablas se
+filtran y ordenan como en la web. El menú del torrent suma "Abrir carpeta". La API no cambia.
+
 ## 0.11-android.3-kotlin (25-11-2026, rama `kotlin`)
 
 Primera ronda de la interfaz en Compose (`cl.tablero.compose`), que reemplaza a la WebView en el teléfono:

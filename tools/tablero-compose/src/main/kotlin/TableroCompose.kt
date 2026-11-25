@@ -10,6 +10,8 @@ import cl.tablero.compose.Dialogo
 import cl.tablero.compose.Estado
 import cl.tablero.compose.Plataforma
 import cl.tablero.compose.TableroPantalla
+import cl.tablero.compose.lng
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -62,6 +64,26 @@ fun probar(e: Estado) {
     e.filtro = cl.tablero.compose.Filtro(tags = setOf(cl.tablero.compose.NO_TAG))
     espera("filtro Sin etiqueta") { e.rows().all { it.tags.isEmpty() } && e.rows().isNotEmpty() }
     e.filtro = cl.tablero.compose.Filtro()
+    // Ronda 2: el detalle.
+    val f = e.rows().first { it.files > 1 }
+    e.updatePrefs { it.copy(tab = "files") }
+    e.abrirDetalle(f.hash)
+    espera("detalle: archivos") { e.details?.hash == f.hash && e.details!!.files.size > 1 }
+    e.act("/api/file-priority", mapOf("hash" to f.hash, "indexes" to listOf(0), "priority" to 0))
+    espera("archivo: No descargar") { e.loadDetalleSync(); e.details?.files?.get(0)?.priority == 0 }
+    e.act("/api/file-priority", mapOf("hash" to f.hash, "indexes" to listOf(0), "priority" to 2))
+    espera("archivo: Alta") { e.loadDetalleSync(); e.details?.files?.get(0)?.priority == 2 }
+    val nt = e.details!!.trackers.size
+    e.act("/api/add-trackers", mapOf("hash" to f.hash, "urls" to listOf("udp://tracker.prueba.example:1337/announce")))
+    espera("agregar rastreador") { e.loadDetalleSync(); e.details?.trackers?.size == nt + 1 }
+    e.act("/api/options", mapOf("hash" to f.hash, "options" to mapOf("priority" to 2, "down_limit" to 100 * 1024L, "up_limit" to 0L,
+        "peers_max" to 40L, "peers_min" to null, "uploads_max" to null, "seed_own" to true, "stop_ratio" to 1.5, "stop_hours" to 0.0)))
+    espera("opciones del torrent") { e.byHash[f.hash]?.let { lng(it.opts["down_limit"]) == 100 * 1024L && lng(it.opts["peers_max"]) == 40L } == true }
+    e.updatePrefs { it.copy(tab = "speed") }
+    e.loadDetalleSync()
+    espera("historia de velocidad") { e.history?.key == f.hash }
+    e.detalle = null
+    e.updatePrefs { it.copy(tab = "general") }
     val n = e.torrents.size
     e.act("/api/add", mapOf("magnet" to "magnet:?xt=urn:btih:" + "d".repeat(40), "directory" to "", "tags" to listOf("Linux"), "start" to false))
     espera("agregar magnet") { e.torrents.size == n + 1 }
@@ -71,6 +93,8 @@ fun probar(e: Estado) {
     println(if (fallas == 0) "TODO OK" else "$fallas FALLAS")
 }
 var fallas = 0
+
+fun Estado.loadDetalleSync() = runBlocking { loadDetalle() }
 
 /**
  * tablero-compose --shots DIR [--escena a,b,...] --scgi RUTA --config DIR --archivos DIR --web DIR [--port N]
@@ -111,10 +135,10 @@ fun main(args: Array<String>) {
     while (estado.conectado == null && waited < 100) { Thread.sleep(100); waited++ }
     Thread.sleep(500)
     val rows = estado.rows()
-    val escenas = (a["--escena"] ?: "lista,cajon,seleccion,menu,etiquetas,eliminar,orden,buscar,claro,agregar,campos").split(',')
+    val escenas = (a["--escena"] ?: "lista,cajon,seleccion,menu,etiquetas,eliminar,orden,buscar,claro,agregar,campos,general,archivos,lista-archivos,pares,rastreadores,piezas,velocidad,total,opciones,menu-detalle,general-claro").split(',')
     for (e in escenas) {
         estado.sel = emptySet(); estado.dialogo = null; estado.menu = null; estado.cajon = false; estado.buscando = false
-        estado.filtro = cl.tablero.compose.Filtro()
+        estado.filtro = cl.tablero.compose.Filtro(); estado.detalle = null
         if (estado.prefs.theme != "dark") estado.updatePrefs { it.copy(theme = "dark") }
         frames(400)
         when (e) {
@@ -130,6 +154,16 @@ fun main(args: Array<String>) {
             "agregar" -> estado.dialogo = Dialogo.Agregar()
             "campos" -> estado.dialogo = Dialogo.Campos
             "probar" -> { probar(estado); continue }
+            "general", "archivos", "lista-archivos", "pares", "rastreadores", "piezas", "velocidad", "total", "opciones", "menu-detalle", "general-claro" -> {
+                val tab = mapOf("archivos" to "files", "lista-archivos" to "files", "pares" to "peers", "rastreadores" to "trackers", "piezas" to "pieces",
+                    "velocidad" to "speed", "total" to "speed", "opciones" to "options")[e] ?: "general"
+                val d = rows.firstOrNull { !it.complete && it.files > 1 } ?: rows.first()
+                estado.updatePrefs { it.copy(tab = tab, filesTree = e != "lista-archivos", speedOf = if (e == "total") "total" else "torrent",
+                    theme = if (e == "general-claro") "light" else "dark") }
+                estado.abrirDetalle(d.hash)
+                frames(1200)
+                if (e == "menu-detalle") estado.menu = "torrents"
+            }
             "filtro" -> { estado.toggleTagFilter("Películas", true); estado.toggleTagFilter("Linux", true) }
         }
         shot(e)

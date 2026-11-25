@@ -57,6 +57,7 @@ data class Torrent(
     val peers: Long,
     val tags: List<String>,
     val finished: Long,
+    val created: Long,
     val added: Long,
     val directory: String,
     val priority: Int,
@@ -92,7 +93,7 @@ data class Torrent(
                 active = bool(o["active"]), complete = bool(o["complete"]), hashing = bool(o["hashing"]),
                 chunksHashed = lng(o["chunks_hashed"]), chunks = lng(o["chunks"]), message = str(o["message"]),
                 seeds = lng(o["seeds"]), peers = lng(o["peers"]), tags = listOfAny(o["tags"]).map { str(it) },
-                finished = lng(o["finished"]), added = lng(o["added"]), directory = str(o["directory"]),
+                finished = lng(o["finished"]), created = lng(o["created"]), added = lng(o["added"]), directory = str(o["directory"]),
                 priority = lng(o["priority"]).toInt(), private = bool(o["private"]), files = lng(o["files"]),
                 opts = asMap(o["opts"]), peersMax = lng(o["peers_max"]), peersMin = lng(o["peers_min"]),
                 uploadsMax = lng(o["uploads_max"]), pos = lng(o["pos"]),
@@ -166,5 +167,68 @@ data class GeneralConf(
 ) {
     companion object {
         fun from(o: Map<String, Any?>) = GeneralConf(asMap(o["general"]), asMap(o["rtorrent"]), asMap(o["torrent"]))
+    }
+}
+
+/** Un archivo del torrent (GET /api/details). [first]..[last] son sus piezas (last sin incluir). */
+data class Archivo(val path: String, val size: Long, val progress: Double, val priority: Int, val first: Long, val last: Long) {
+    val name: String get() = path.substringAfterLast('/')
+}
+
+data class Par(
+    val address: String, val port: Long, val client: String, val progress: Double,
+    val downRate: Long, val upRate: Long, val encrypted: Boolean, val incoming: Boolean,
+)
+
+data class Rastreador(val url: String, val enabled: Boolean, val seeds: Long, val leechers: Long, val downloaded: Long)
+
+/** GET /api/details: archivos, pares, rastreadores y el mapa de piezas de un torrent. */
+data class Detalles(
+    val hash: String,
+    val files: List<Archivo>,
+    val peers: List<Par>,
+    val trackers: List<Rastreador>,
+    val basePath: String?,
+    val chunkSize: Long,
+    val chunks: Long,
+    val bitfield: String,
+    /** Copias de cada pieza entre los pares, en hexadecimal de a dos; vacío si no se sabe. */
+    val seen: String,
+    val availability: Double?,
+    val availabilityEstimated: Boolean,
+) {
+    fun have(i: Int): Boolean {
+        val c = bitfield.getOrNull(i shr 2)?.digitToIntOrNull(16) ?: return false
+        return (c shr (3 - (i and 3))) and 1 == 1
+    }
+
+    fun copies(i: Int): Int? = if (seen.isEmpty()) null else seen.substring(i * 2, minOf(seen.length, i * 2 + 2)).toIntOrNull(16)
+
+    companion object {
+        fun from(hash: String, o: Map<String, Any?>) = Detalles(
+            hash = hash,
+            files = listOfAny(o["files"]).map { asMap(it) }.map { f ->
+                val r = listOfAny(f["range"])
+                Archivo(str(f["path"]), lng(f["size"]), dbl(f["progress"]), lng(f["priority"]).toInt(), lng(r.getOrNull(0)), lng(r.getOrNull(1)))
+            },
+            peers = listOfAny(o["peers"]).map { asMap(it) }.map { p ->
+                Par(str(p["address"]), lng(p["port"]), str(p["client"]), dbl(p["progress"]), lng(p["down_rate"]), lng(p["up_rate"]),
+                    bool(p["encrypted"]), bool(p["incoming"]))
+            },
+            trackers = listOfAny(o["trackers"]).map { asMap(it) }.map { t ->
+                Rastreador(str(t["url"]), bool(t["enabled"]), lng(t["seeds"]), lng(t["leechers"]), lng(t["downloaded"]))
+            },
+            basePath = o["base_path"] as? String,
+            chunkSize = lng(o["chunk_size"]), chunks = lng(o["chunks"]), bitfield = str(o["bitfield"]), seen = str(o["seen"]),
+            availability = (o["availability"] as? Number)?.toDouble(), availabilityEstimated = bool(o["availability_estimated"]),
+        )
+    }
+}
+
+/** GET /api/history: una muestra cada [step] s: (hora, bajada, subida[, límite de bajada, límite de subida]). */
+data class Historia(val key: String, val step: Long, val samples: List<LongArray>) {
+    companion object {
+        fun from(key: String, o: Map<String, Any?>) = Historia(key, lng(o["step"]),
+            listOfAny(o["samples"]).map { s -> listOfAny(s).map { lng(it) }.toLongArray() })
     }
 }

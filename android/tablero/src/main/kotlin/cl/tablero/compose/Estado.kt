@@ -1,6 +1,7 @@
 package cl.tablero.compose
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
@@ -42,6 +43,8 @@ data class Prefs(
     val units: String = "bin",
     val tab: String = "general",
     val backupAsked: Boolean = false,
+    /** El orden de las tablas del detalle (files, peers, trackers): prefs.tableSort de la web. */
+    val tableSort: Map<String, Orden> = emptyMap(),
     /** Solo de esta app: los datos que muestra cada fila de la lista, además del nombre. */
     val fields: List<String> = DEFAULT_FIELDS,
 ) {
@@ -52,6 +55,9 @@ data class Prefs(
         put("hideSkipped", hideSkipped); put("speedOf", speedOf); put("speedRange", speedRange.toLong())
         put("units", units); put("tab", tab); put("backupAsked", backupAsked)
         put("appFields", fields.toList())
+        put("tableSort", LinkedHashMap<String, Any?>().apply {
+            for ((k, o) in tableSort) put(k, linkedMapOf("col" to o.col, "dir" to o.dir.toLong()))
+        })
     }
 
     companion object {
@@ -72,6 +78,10 @@ data class Prefs(
                 speedOf = t("speedOf", d.speedOf), speedRange = i("speedRange", d.speedRange), units = t("units", d.units),
                 tab = t("tab", d.tab), backupAsked = b("backupAsked", false),
                 fields = (o["appFields"] as? List<*>)?.map { str(it) }?.filter { it in COLUMN_IDS } ?: DEFAULT_FIELDS,
+                tableSort = asMap(o["tableSort"]).mapNotNull { (k, v) ->
+                    val m = asMap(v); val col = m["col"] as? String ?: return@mapNotNull null
+                    k to Orden(col, if (lng(m["dir"]) > 0) 1 else -1)
+                }.toMap(),
             )
         }
     }
@@ -157,6 +167,14 @@ class Estado(val api: Api, val plataforma: Plataforma, private val scope: Corout
     var buscando by mutableStateOf(false)
     var cajon by mutableStateOf(false)
     var menu by mutableStateOf<String?>(null)
+    /** El torrent cuyo detalle está abierto (sus pestañas), o null. */
+    var detalle by mutableStateOf<String?>(null)
+    var details by mutableStateOf<Detalles?>(null); private set
+    var history by mutableStateOf<Historia?>(null); private set
+    /** Carpetas cerradas en el árbol de Archivos ("hash:ruta"). */
+    var collapsed by mutableStateOf<Set<String>>(emptySet())
+    /** El texto de "Filtrar…" de cada tabla del detalle (files, peers, trackers); dura lo que la app abierta. */
+    val tableFilter = mutableStateMapOf<String, String>()
 
     /** Avisos breves (los toast de la web); la pantalla los muestra de a uno. */
     val avisos = Channel<Aviso>(Channel.BUFFERED)
@@ -187,6 +205,7 @@ class Estado(val api: Api, val plataforma: Plataforma, private val scope: Corout
             menu != null -> menu = null
             dialogo != null -> dialogo = null
             cajon -> cajon = false
+            detalle != null -> detalle = null
             sel.isNotEmpty() -> sel = emptySet()
             buscando -> { buscando = false; filtro = filtro.copy(text = "") }
             else -> return false
@@ -209,13 +228,44 @@ class Estado(val api: Api, val plataforma: Plataforma, private val scope: Corout
             errorConexion = null
             sinRtorrent = false
             sel = sel.filterTo(LinkedHashSet()) { it in byHash }
+            if (detalle != null && detalle !in byHash) detalle = null
             reportJobs(list)
+            loadDetalle()
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             conectado = false
             errorConexion = e.texto()
             sinRtorrent = e.sinRtorrent()
         }
+    }
+
+    /** Lo del detalle abierto: el gráfico en Velocidad, los detalles en las demás pestañas. */
+    suspend fun loadDetalle() {
+        val h = detalle ?: return
+        try {
+            if (prefs.tab == "speed") {
+                val key = if (prefs.speedOf == "total") "total" else h
+                history = Historia.from(key, api.get("/api/history", if (key == "total") emptyMap() else mapOf("hash" to h)))
+            } else if (prefs.tab != "options") {
+                val d = Detalles.from(h, api.get("/api/details", mapOf("hash" to h)))
+                if (detalle == h) details = d
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            // el torrent se quitó entretanto, o rTorrent no contesta: la próxima vuelta
+        }
+    }
+
+    fun abrirDetalle(h: String) {
+        if (details?.hash != h) details = null
+        detalle = h
+        scope.launch { loadDetalle() }
+    }
+
+    /** Ver ya la prioridad elegida en Archivos; la próxima vuelta la confirma. */
+    fun marcarPrioridad(indexes: List<Int>, p: Int) {
+        val d = details ?: return
+        details = d.copy(files = d.files.mapIndexed { i, f -> if (i in indexes) f.copy(priority = p) else f })
     }
 
     private fun reportJobs(list: List<Torrent>) {
@@ -330,4 +380,25 @@ class Estado(val api: Api, val plataforma: Plataforma, private val scope: Corout
     }
 
     fun selected(): List<Torrent> = sel.mapNotNull { byHash[it] }
+
+    /** Sobre qué actúan el menú y la barra de acciones: el torrent del detalle abierto, o los elegidos. */
+    fun objetivo(): List<Torrent> = detalle?.let { listOfNotNull(byHash[it]) } ?: selected()
+
+    /** Cambia de pestaña en el detalle y trae lo que esa pestaña muestra. */
+    fun pestana(tab: String) {
+        updatePrefs { it.copy(tab = tab) }
+        scope.launch { loadDetalle() }
+    }
+
+    /** "Abrir carpeta" de la web: del torrent, de uno de sus archivos ([index]) o de una carpeta suya ([dir]). */
+    fun abrirCarpeta(hash: String, index: Int? = null, dir: String? = null) {
+        scope.launch {
+            intenta {
+                val body = linkedMapOf<String, Any?>("hash" to hash)
+                if (index != null) body["index"] = index else if (dir != null) body["dir"] = dir
+                val r = api.post("/api/open-folder", body)
+                if (bool(r["android"])) plataforma.abrirCarpeta(str(r["folder"])) else aviso("Carpeta: " + str(r["folder"]))
+            }
+        }
+    }
 }

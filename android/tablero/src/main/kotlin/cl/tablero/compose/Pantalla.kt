@@ -74,15 +74,16 @@ fun TableroPantalla(estado: Estado) {
         LaunchedEffect(Unit) {
             for (a in estado.avisos) { avisoError = a.error; snack.showSnackbar(a.texto, withDismissAction = a.error) }
         }
-        ModalNavigationDrawer(drawerState = drawer, drawerContent = {
+        val det = estado.detalle?.let { estado.byHash[it] }
+        ModalNavigationDrawer(drawerState = drawer, gesturesEnabled = det == null, drawerContent = {
             ModalDrawerSheet(drawerContainerColor = c.panel, modifier = Modifier.width(300.dp)) { Filtros(estado) }
         }) {
             Scaffold(
                 containerColor = c.bg,
-                topBar = { BarraSuperior(estado) },
-                bottomBar = { if (estado.sel.isNotEmpty()) BarraAcciones(estado) },
+                topBar = { if (det != null) BarraDetalle(estado, det) { MenuTorrents(estado) } else BarraSuperior(estado) },
+                bottomBar = { if (det != null || estado.sel.isNotEmpty()) BarraAcciones(estado) },
                 floatingActionButton = {
-                    if (estado.sel.isEmpty()) FloatingActionButton(onClick = { estado.dialogo = Dialogo.Agregar() }, containerColor = c.accent, contentColor = Color.White) {
+                    if (det == null && estado.sel.isEmpty()) FloatingActionButton(onClick = { estado.dialogo = Dialogo.Agregar() }, containerColor = c.accent, contentColor = Color.White) {
                         Icono("plus", size = 24.dp, desc = "Agregar")
                     }
                 },
@@ -93,7 +94,10 @@ fun TableroPantalla(estado: Estado) {
                     }
                 },
             ) { pad ->
-                Column(Modifier.padding(pad).fillMaxSize()) {
+                if (det != null) Column(Modifier.padding(pad).fillMaxSize()) {
+                    Conexion(estado)
+                    DetalleCuerpo(estado, det)
+                } else Column(Modifier.padding(pad).fillMaxSize()) {
                     Conexion(estado)
                     if (estado.prefs.tagbar) BarraEtiquetas(estado)
                     ListaTorrents(estado)
@@ -195,12 +199,12 @@ private fun MenuOrden(estado: Estado) {
     }
 }
 
-/** El menú de los torrents elegidos (rowMenu de la web), menos lo que llega en la ronda 2. */
+/** El menú de los torrents elegidos o del detalle abierto (rowMenu de la web). */
 @Composable
-private fun MenuTorrents(estado: Estado) {
+fun MenuTorrents(estado: Estado) {
     val c = LocalColores.current
     val clip = LocalClipboardManager.current
-    val ts = estado.selected()
+    val ts = estado.objetivo()
     val hs = ts.map { it.hash }
     DropdownMenu(expanded = estado.menu == "torrents" && ts.isNotEmpty(), onDismissRequest = { estado.menu = null }, containerColor = c.panel2) {
         fun item(label: String, enabled: Boolean = true, check: Boolean? = null, run: () -> Unit) = @Composable {
@@ -228,6 +232,7 @@ private fun MenuTorrents(estado: Estado) {
                     if (on) "Descarga normal (por rareza)" else "Descarga en orden: desde el principio, para ver o escuchar mientras baja")
             }()
         }
+        if (ts.size == 1) item("Abrir carpeta") { estado.abrirCarpeta(ts[0].hash) }()
         item("Verificar datos") {
             estado.act("/api/action", mapOf("action" to "recheck", "hashes" to hs), "Verificación iniciada: se revisa cada pieza contra el .torrent")
         }()
@@ -245,7 +250,7 @@ private fun MenuTorrents(estado: Estado) {
 private fun BarraAcciones(estado: Estado) {
     val c = LocalColores.current
     BottomAppBar(containerColor = c.panel, contentPadding = PaddingValues(horizontal = 4.dp)) {
-        val hs = { estado.selected().map { it.hash } }
+        val hs = { estado.objetivo().map { it.hash } }
         @Composable fun accion(icon: String, label: String, tint: Color = c.text, run: () -> Unit) {
             Column(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable(onClick = run).padding(vertical = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally) {
@@ -327,8 +332,9 @@ private fun ListaTorrents(estado: Estado) {
             val selected = t.hash in estado.sel
             FilaTorrent(estado, t, selected,
                 onClick = {
-                    // Con algo elegido, tocar suma o quita; si no, elige solo ese (el detalle llega en la ronda 2).
-                    estado.sel = if (estado.sel.isNotEmpty()) (if (selected) estado.sel - t.hash else estado.sel + t.hash) else setOf(t.hash)
+                    // Con algo elegido, tocar suma o quita; si no, abre su detalle.
+                    if (estado.sel.isNotEmpty()) estado.sel = if (selected) estado.sel - t.hash else estado.sel + t.hash
+                    else estado.abrirDetalle(t.hash)
                 },
                 onLongClick = { estado.sel = if (selected) estado.sel - t.hash else estado.sel + t.hash })
         }

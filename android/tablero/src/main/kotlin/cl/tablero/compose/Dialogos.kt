@@ -40,6 +40,7 @@ sealed interface Dialogo {
     data class Etiquetas(val hashes: List<String>) : Dialogo
     data class Agregar(val magnets: String = "", val files: List<ArchivoTorrent> = emptyList()) : Dialogo
     data object Campos : Dialogo
+    data class Rastreadores(val hash: String) : Dialogo
 }
 
 @Composable
@@ -50,6 +51,7 @@ fun DialogoActual(estado: Estado) {
         is Dialogo.Etiquetas -> EtiquetasDialogo(estado, d.hashes)
         is Dialogo.Agregar -> AgregarDialogo(estado, d)
         Dialogo.Campos -> CamposDialogo(estado)
+        is Dialogo.Rastreadores -> RastreadoresDialogo(estado, d.hash)
     }
 }
 

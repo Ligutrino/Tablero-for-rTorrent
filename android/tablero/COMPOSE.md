@@ -11,17 +11,18 @@ Mientras la interfaz Compose no tenga todo, el globo de la barra de arriba abre 
 | Archivo | Qué tiene |
 |---|---|
 | `Api.kt` | `Api` (la API en el mismo proceso) y `Plataforma` (lo que pide al sistema: carpetas, reproductor, selectores) |
-| `Modelo.kt` | `Torrent`, `Stats`, `TagConf`, `GeneralConf`: el JSON de la API con tipos |
+| `Modelo.kt` | `Torrent`, `Stats`, `TagConf`, `GeneralConf`, `Detalles`, `Historia`: el JSON de la API con tipos |
 | `Estado.kt` | `Estado`: `state`, `prefs`, `refresh()`, `act()`, filtros y orden de app.js |
 | `Formato.kt` | tamaños, velocidades, fechas y textos de estado (`size`, `rate`, `eta`, `STATUS`…) |
 | `Tema.kt` | colores de app.css (oscuro y claro), íconos de Lucide, colores de etiquetas |
 | `Etiquetas.kt` | etiquetas como en la web: color, ícono o logo según el lugar |
 | `Lista.kt`, `Pantalla.kt`, `Dialogos.kt` | la pantalla, la lista, la barra lateral y los diálogos |
+| `Detalle.kt` | el detalle de un torrent y sus siete pestañas |
 | `Iconos.kt` | generado por `tools/gen-iconos.py` desde `web/icons.js` (no editar a mano) |
 
 ## Lo que tiene la web, y lo que ya está en Compose
 
-Ronda 1 (✓) y lo que falta (○):
+Rondas 1 y 2 (✓) y lo que falta (○):
 
 - ✓ Lista con estado, progreso, velocidades y etiquetas; tinte con el color de la primera etiqueta.
 - ✓ Datos de cada fila: cualquiera de las 22 columnas de la web (orden, nombre, etiquetas, tamaño, progreso…).
@@ -39,9 +40,12 @@ Ronda 1 (✓) y lo que falta (○):
 - ✓ Velocidad total arriba, con ⁽ˡ⁾ cuando hay límite.
 - ✓ Tema oscuro y claro, unidades binarias o decimales (desde prefs; el diálogo Opciones llega en la ronda 2).
 - ✓ Atrás cierra menú, diálogo, barra lateral, selección y búsqueda, en ese orden.
-- ○ Detalle del torrent: General (mapa de piezas, disponibilidad, datos, abrir carpeta), Archivos (árbol o lista,
-  prioridad por archivo, reproducir mientras baja), Pares, Rastreadores (agregar rastreadores), Piezas,
-  Velocidad (gráfico 5 min / 30 min / 1 h, del torrent o total), Opciones (prioridad, límites, pares, al sembrar).
+- ✓ Detalle del torrent (tocar una fila sin nada elegido): General (mapa de piezas, disponibilidad, datos, abrir carpeta),
+  Archivos (árbol o lista, ocultar omitidos, prioridad por archivo o carpeta, reproducir mientras baja, mostrar en
+  la carpeta), Pares, Rastreadores (agregar rastreadores), Piezas, Velocidad (gráfico 5 min / 30 min / 1 h, del
+  torrent o total), Opciones (prioridad, límites, pares, al sembrar). Filtrar y ordenar las tablas.
+  En el teléfono: el orden se elige con un botón (no hay títulos de columna) y lo que en la web es un tooltip
+  se muestra al tocar (leyendas, cuadros de Piezas, instantes del gráfico). No hay anchos de columna.
 - ○ Agregar completo: elegir .torrent, archivos a bajar (árbol), carpeta (Examinar… y Elegir con Android…),
   espacio libre, duplicados (Sumar rastreadores).
 - ○ Opciones de etiqueta: nombre, color, ícono, logo (con tono), apariencia por lugar; subir, bajar y eliminar etiquetas.
