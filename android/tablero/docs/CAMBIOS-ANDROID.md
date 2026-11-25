@@ -1,5 +1,10 @@
 # Cambios de la variante Android
 
+## 0.11-android.11-kotlin (25-11-2026, rama `kotlin`)
+
+- El botón + quedaba en parte bajo la barra de navegación del sistema (la barra de abajo vacía, de alto 0, le hacía
+  ignorar ese espacio). Ahora la barra de abajo solo existe cuando muestra algo.
+
 ## 0.11-android.10-kotlin (25-11-2026, rama `kotlin`)
 
 - Velocidades lado a lado cuando caben (y "Tablero" delante si también cabe); si no, una sobre otra.

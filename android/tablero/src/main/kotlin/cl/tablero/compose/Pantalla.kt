@@ -85,7 +85,8 @@ fun TableroPantalla(estado: Estado) {
                 topBar = { if (det != null) BarraDetalle(estado, det) { MenuTorrents(estado) } else BarraSuperior(estado) },
                 bottomBar = {
                     // El gráfico de velocidad ocupa la mitad de abajo; el botón Agregar queda sobre él.
-                    Column {
+                    // Solo si hay algo: una barra vacía (alto 0) hace que el botón + ignore la barra de navegación del sistema.
+                    if ((det == null && estado.grafico) || det != null || estado.sel.isNotEmpty()) Column {
                         // Sin la barra de acciones debajo, el panel deja libre la zona de los botones del sistema.
                         if (det == null && estado.grafico) PanelVelocidad(estado, Modifier.fillMaxWidth().fillMaxHeight(0.45f)
                             .then(if (det != null || estado.sel.isNotEmpty()) Modifier else Modifier.background(c.panel).navigationBarsPadding()))
