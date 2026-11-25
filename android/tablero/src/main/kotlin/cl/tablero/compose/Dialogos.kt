@@ -1,5 +1,12 @@
 package cl.tablero.compose
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.Surface
+import androidx.compose.material3.AlertDialogDefaults
+import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -16,7 +23,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedTextField
@@ -100,26 +106,34 @@ fun Ventana(
     var busy by remember { mutableStateOf(false) }
     val c = LocalColores.current
     val yo = estado.dialogo
-    AlertDialog(
-        onDismissRequest = { onCancel(); estado.dialogo = null },
-        // Más ancho que el de Material (que deja los formularios muy angostos en un teléfono): el ancho menos 16 dp por lado.
-        properties = estado.plataforma.propiedadesDialogo,
-        // Sin el ancho de Material la ventana no respeta sola las barras del sistema: se dejan fuera con systemBars.
-        modifier = Modifier.windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.systemBars)
-            .padding(horizontal = 16.dp, vertical = 12.dp).widthIn(max = 560.dp).fillMaxWidth(),
-        title = { Text(title, fontSize = 18.sp) },
-        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) { body() } },
-        confirmButton = {
-            if (ok != null) TextButton(enabled = !busy, onClick = {
-                busy = true
-                // Si onOk abrió otro diálogo (Restaurar, Sumar rastreadores…), ese queda.
-                scope.launch { if (onOk() && estado.dialogo === yo) estado.dialogo = null; busy = false }
-            }, colors = if (danger) ButtonDefaults.textButtonColors(contentColor = c.bad) else ButtonDefaults.textButtonColors()) { Text(ok) }
-        },
-        dismissButton = {
-            Row { extra?.invoke(); TextButton(onClick = { onCancel(); estado.dialogo = null }) { Text(cancel) } }
-        },
-    )
+    val cerrar = { onCancel(); estado.dialogo = null }
+    // La ventana ocupa toda la pantalla y la tarjeta se centra dentro del espacio libre de las barras del sistema: así
+    // nada queda bajo la barra de navegación (una ventana centrada a su alto se metía ahí cuando era más alta que la
+    // de estado). Tocar fuera de la tarjeta cierra, como en AlertDialog.
+    Dialog(onDismissRequest = cerrar, properties = estado.plataforma.propiedadesDialogo) {
+        Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null, onClick = cerrar)
+            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.systemBars)
+            .padding(horizontal = 16.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
+            Surface(Modifier.widthIn(max = 560.dp).fillMaxWidth().clickable(remember { MutableInteractionSource() }, null) {},
+                shape = AlertDialogDefaults.shape, color = AlertDialogDefaults.containerColor, tonalElevation = AlertDialogDefaults.TonalElevation) {
+                Column(Modifier.padding(24.dp)) {
+                    Text(title, fontSize = 18.sp, color = AlertDialogDefaults.titleContentColor, modifier = Modifier.padding(bottom = 16.dp))
+                    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides AlertDialogDefaults.textContentColor) { body() }
+                    }
+                    Row(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                        extra?.invoke()
+                        TextButton(onClick = cerrar) { Text(cancel) }
+                        if (ok != null) TextButton(enabled = !busy, onClick = {
+                            busy = true
+                            // Si onOk abrió otro diálogo (Restaurar, Sumar rastreadores…), ese queda.
+                            scope.launch { if (onOk() && estado.dialogo === yo) estado.dialogo = null; busy = false }
+                        }, colors = if (danger) ButtonDefaults.textButtonColors(contentColor = c.bad) else ButtonDefaults.textButtonColors()) { Text(ok) }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

@@ -1,5 +1,10 @@
 # Cambios de la variante Android
 
+## 0.11-android.19-kotlin (25-11-2026, rama `kotlin`)
+
+- Diálogos: la ventana ocupa toda la pantalla y la tarjeta se centra en el espacio libre de las barras del sistema. Antes
+  la ventana se centraba a su alto y, como la barra de navegación es más alta que la de estado, la tarjeta se metía en ella.
+
 ## 0.11-android.18-kotlin (25-11-2026, rama `kotlin`)
 
 - Descargar en orden sale del menú Más: es una casilla al agregar torrents (`/api/add` acepta `sequential`, solo en el
