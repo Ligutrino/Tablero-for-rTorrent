@@ -35,7 +35,7 @@ import xmlrpc.client
 import zipfile
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.11-android.1"
+VERSION = "0.11-android.2"
 TAGS_KEY = "tablero_tags"
 OPTS_KEY = "tablero_opts"
 POS_KEY = "tablero_pos"

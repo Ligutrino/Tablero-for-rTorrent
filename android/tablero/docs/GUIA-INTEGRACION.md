@@ -3,7 +3,7 @@
 Este paquete es para el proyecto que porta rTorrent a Android y quiere usar **Tablero para rTorrent** como interfaz. Se puede leer sin conocer el proyecto de escritorio.
 
 - Base: Tablero 0.11 (escritorio, Linux), con Límites y conexiones generales, con los arreglos para rTorrent 0.16 que salieron al probarlo en Termux y el gráfico de velocidad general en Límites.
-- Esta variante: **0.11-android.1**, en `fuente/`. Es una rama aparte: la versión de escritorio no cambia.
+- Esta variante: **0.11-android.2**, en `fuente/`. Es una rama aparte: la versión de escritorio no cambia.
 - `android.patch`: todas las diferencias con la versión de escritorio (5 archivos: tablero.py y web/).
 - `CAMBIOS-ANDROID.md`: qué trae cada versión de la variante. Sirve para llevar los cambios a cada versión nueva de escritorio (`patch -p1 < android.patch` dentro de la carpeta de la versión nueva).
 
@@ -83,7 +83,7 @@ Se activa sola cuando el puntero principal es un dedo (`(pointer: coarse)`), en 
 - Agregar torrents dice "Elige archivos .torrent" en vez de "Arrastra…".
 - A ancho de teléfono, las dos velocidades van una sobre otra y Agregar queda como solo "+", para que todo quepa sin ensanchar la página.
 - Lo que con mouse sale al pasar por encima lleva al lado un botón "i" que lo muestra al tocarlo. El mapa de piezas y el gráfico de velocidad muestran el detalle del punto tocado.
-- Dos dedos deslizados hacia abajo recargan la página (con aviso "Suelta para recargar"). No interfiere con el desplazamiento de un dedo ni con el pellizco, que se hace con zoom de la WebView.
+- Dos dedos deslizados hacia abajo actualizan todo sin recargar la página, así no parpadea (avisos "Suelta para recargar" y "Actualizando…"). No interfiere con el desplazamiento de un dedo ni con el pellizco, que se hace con zoom de la WebView.
 
 Además (sirve en ambos modos, pero se agregó para Android):
 

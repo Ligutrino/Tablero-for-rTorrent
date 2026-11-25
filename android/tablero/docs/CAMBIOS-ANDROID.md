@@ -1,5 +1,9 @@
 # Cambios de la variante Android
 
+## 0.11-android.2 (25-11-2026)
+
+- Deslizar dos dedos hacia abajo ya no recarga la página (que dejaba la pantalla en blanco un instante): vuelve a pedir torrents, etiquetas, conexiones generales, detalles y gráfico en el mismo lugar, con el aviso "Actualizando…".
+
 ## 0.11-android.1 (24-11-2026)
 
 La variante 0.10.1-android.4 sobre Tablero 0.11 de escritorio, que es exactamente su base. Solo cambia el número de versión.

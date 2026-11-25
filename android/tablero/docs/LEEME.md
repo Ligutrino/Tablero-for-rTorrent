@@ -1,7 +1,7 @@
 # Tablero para rTorrent: paquete para Android
 
 - `GUIA-INTEGRACION.md`: cómo usar Tablero como interfaz de la app Android (empieza aquí).
-- `fuente/`: Tablero 0.11-android.1 (`tablero.py` + `web/` + `iconos/`). Rama aparte de la versión de escritorio.
+- `fuente/`: Tablero 0.11-android.2 (`tablero.py` + `web/` + `iconos/`). Rama aparte de la versión de escritorio.
 - `ejemplo-modulo-ui/`: módulo Kotlin de ejemplo (`:ui-tablero`) que se conecta con `:engine`, con la notificación (`TableroAvisos`). Sin compilar.
 - `icono-adaptable/`: ícono de la app para Android (capas fondo, frente y monocromo) con vista previa.
 - `icono-notificacion/`: íconos de la notificación (normal, con error, sin conexión) con vista previa.

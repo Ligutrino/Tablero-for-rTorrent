@@ -1,12 +1,12 @@
 diff -ruN escritorio/tablero.py android/tablero.py
---- escritorio/tablero.py	2026-11-24 23:56:42.611679757 +0000
-+++ android/tablero.py	2026-11-24 23:56:42.614891782 +0000
+--- escritorio/tablero.py	2026-11-25 00:14:16.835917597 +0000
++++ android/tablero.py	2026-11-25 00:14:16.843478227 +0000
 @@ -35,7 +35,7 @@
  import zipfile
  from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
  
 -VERSION = "0.11"
-+VERSION = "0.11-android.1"
++VERSION = "0.11-android.2"
  TAGS_KEY = "tablero_tags"
  OPTS_KEY = "tablero_opts"
  POS_KEY = "tablero_pos"
@@ -340,8 +340,8 @@ diff -ruN escritorio/tablero.py android/tablero.py
  
  if __name__ == "__main__":
 diff -ruN escritorio/web/app.css android/web/app.css
---- escritorio/web/app.css	2026-11-24 23:56:42.611777384 +0000
-+++ android/web/app.css	2026-11-24 23:56:42.615487315 +0000
+--- escritorio/web/app.css	2026-11-25 00:14:16.839524446 +0000
++++ android/web/app.css	2026-11-25 00:14:16.885730269 +0000
 @@ -123,6 +123,18 @@
  .vsplit { width: 4px; cursor: col-resize; background: var(--line); flex: none; }
  .hsplit { height: 4px; cursor: row-resize; background: var(--line); flex: none; }
@@ -392,8 +392,8 @@ diff -ruN escritorio/web/app.css android/web/app.css
  .add-row:hover { background: var(--hover); }
  #modal .add-row .check { flex: 1; min-width: 0; gap: 8px; height: 24px; }
 diff -ruN escritorio/web/app.js android/web/app.js
---- escritorio/web/app.js	2026-11-24 23:56:42.611811781 +0000
-+++ android/web/app.js	2026-11-24 23:56:42.616580535 +0000
+--- escritorio/web/app.js	2026-11-25 00:14:16.840039644 +0000
++++ android/web/app.js	2026-11-25 00:14:16.886602965 +0000
 @@ -24,6 +24,46 @@
  	`<button type="button" class="tbtn${on ? " on" : ""}" ${attrs}${on ? ' aria-pressed="true"' : ""}>${iconHTML("lucide:" + icon)}<span>${label}</span></button>`;
  // A command for the terminal, with its own Copiar button (any [data-copy-cmd] copies).
@@ -524,7 +524,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  			...(t.message ? [["Mensaje", `<span class="folder-line"><span title="${esc(messageText(t))}">${esc(messageText(t))}</span>${toolBtn("copy", "Copiar", 'data-copy-message title="Copiar el mensaje"')}</span>`, true]] : []),
  			...(d && d.chunks ? [["Piezas", `${nf0.format(d.chunks)} × ${size(d.chunk_size)}`]] : []),
  			["Privado", t.private ? "Sí" : "No"],
-@@ -938,12 +981,69 @@
+@@ -938,12 +981,90 @@
  	tip.style.top = (y + 18 + r.height > innerHeight ? y - r.height - 10 : y + 18) + "px";
  }
  function hideTip() { $("#tip").hidden = true; }
@@ -532,6 +532,26 @@ diff -ruN escritorio/web/app.js android/web/app.js
 +const legendInfo = () => (touchUI() ? '<span class="info" aria-hidden="true">i</span>' : "");
 +function statusTip(t) {
 +	return t.status === "queued" ? "Espera su turno: rTorrent verifica un torrent a la vez" : t.status === "waiting" ? "Espera su turno: Tablero reubica un torrent a la vez" : messageText(t);
++}
++
++async function softReload(hint) {
++	if (hint.dataset.busy) return;
++	hint.dataset.busy = "1";
++	hint.textContent = "Actualizando…";
++	hint.classList.add("ready");
++	hint.style.transform = "translate(-50%, 55px)";
++	hint.hidden = false;
++	const t0 = Date.now();
++	try {
++		try { state.tagConf = await api("/api/tags"); } catch { /* keep the last ones */ }
++		await loadGeneral();
++		state.detailsFor = null;
++		state.historyKey = null;
++		await refresh();
++	} finally {
++		// Long enough to be seen, so it is clear that it did refresh.
++		setTimeout(() => { delete hint.dataset.busy; hint.hidden = true; hint.classList.remove("ready"); }, Math.max(0, 600 - (Date.now() - t0)));
++	}
 +}
 +
 +// Touch: tapping an "i" (or a legend, or a "?") shows its text; a tap anywhere else hides it.
@@ -556,8 +576,9 @@ diff -ruN escritorio/web/app.js android/web/app.js
 +	document.addEventListener("scroll", () => { if (!$("#tip").hidden && !state.tipCanvas) hideTip(); }, true);
 +}
 +
-+// Touch: two fingers dragged down together reload the page. One finger scrolls the list and a
-+// pinch (fingers moving apart or together) zooms, so neither gets in the way.
++// Touch: two fingers dragged down together refresh everything. One finger scrolls the list and a
++// pinch (fingers moving apart or together) zooms, so neither gets in the way. It fetches again
++// in place instead of reloading the page, which would blank the screen for a moment.
 +function wireTwoFingerReload() {
 +	const hint = document.createElement("div");
 +	hint.id = "reload-hint";
@@ -566,7 +587,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
 +	let start = null, ready = false;
 +	const pts = (e) => [...e.touches].slice(0, 2).map((t) => [t.clientX, t.clientY]);
 +	const gap = (p) => Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]);
-+	const reset = () => { start = null; ready = false; hint.hidden = true; };
++	const reset = () => { start = null; ready = false; if (!hint.dataset.busy) hint.hidden = true; };
 +	document.addEventListener("touchstart", (e) => {
 +		const zoomed = window.visualViewport && visualViewport.scale > 1.05;   // two fingers then pan the zoomed page
 +		if (e.touches.length === 2 && !zoomed && !modalOpen()) start = pts(e); else reset();
@@ -582,7 +603,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
 +		hint.textContent = ready ? "Suelta para recargar" : "Sigue bajando para recargar";
 +		hint.style.transform = `translate(-50%, ${Math.min(dy, 110) * 0.5}px)`;
 +	}, { passive: true });
-+	document.addEventListener("touchend", () => { if (ready) location.reload(); reset(); });
++	document.addEventListener("touchend", () => { const go = ready; reset(); if (go) softReload(hint); });
 +	document.addEventListener("touchcancel", reset);
 +}
  
@@ -595,7 +616,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  	avail: { name: "Disponible en pares", tip: "Te falta esta pieza, pero al menos un par conectado la tiene, así que se puede descargar ahora." },
  	nosource: { name: "Sin fuentes", tip: "Te falta esta pieza y ningún par conectado la tiene. El torrent no se puede completar hasta que aparezca alguien con ella." },
  	missing: { name: "Falta", tip: "Te falta esta pieza. Con el torrent detenido o en pausa no hay pares conectados, así que no se sabe quién la tiene." },
-@@ -972,7 +1072,7 @@
+@@ -972,7 +1093,7 @@
  	const cols = Math.max(1, Math.floor(($("#details-body").clientWidth - 32 + PIECE_GAP) / (PIECE_CELL + PIECE_GAP)));
  	const k = Math.ceil(p.n / (cols * PIECE_ROWS));
  	const shown = ["done", ...(k > 1 ? ["partial"] : []), ...(d.seen ? ["avail", "nosource"] : ["missing"]), "skipped"];
@@ -604,7 +625,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		`<i class="sw pc-${c}"></i>${PIECE_CATS[c].name}${c === "partial" ? "" : ` <b>${nf0.format(counts[c] || 0)}</b>`}</span>`).join("");
  	return `<div class="subtools">${legend}<span class="spacer"></span>
  		<span class="dimtxt">${nf0.format(p.n)} piezas de ${size(d.chunk_size)}${k > 1 ? ` · cada cuadro = ${k} piezas` : ""} · disponibilidad ${nf2.format(d.availability)}</span></div>
-@@ -1039,6 +1139,7 @@
+@@ -1039,6 +1160,7 @@
  			(files.length ? `<div class="dimtxt">${esc(files.slice(0, 3).join(", "))}${files.length > 3 ? ` y ${files.length - 3} más` : ""}</div>` : ""));
  	};
  	canvas.onmouseleave = hideTip;
@@ -612,7 +633,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  }
  
  // ------------------------------------------------------------ speed tab
-@@ -1072,7 +1173,7 @@
+@@ -1072,7 +1194,7 @@
  	const last = samples[samples.length - 1];
  	const series = ["down", "up", ...(total && last && last[3] ? ["dlim"] : []), ...(total && last && last[4] ? ["ulim"] : [])];
  	const value = (s) => !last ? "" : s === "down" ? rate(last[1]) || "0 B/s" : s === "up" ? rate(last[2]) || "0 B/s" : s === "dlim" ? rate(last[3]) : rate(last[4]);
@@ -621,7 +642,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		`<i class="ln ln-${s}"></i>${SPEED_SERIES[s].name} <b>${value(s)}</b></span>`).join("");
  	return { series, legend };
  }
-@@ -1200,6 +1301,7 @@
+@@ -1200,6 +1322,7 @@
  			`<div><i class="ln ln-down"></i>Bajada ${rate(best[1]) || "0 B/s"}</div><div><i class="ln ln-up"></i>Subida ${rate(best[2]) || "0 B/s"}</div>`);
  	};
  	canvas.onmouseleave = () => { draw(null); hideTip(); };
@@ -629,7 +650,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  }
  
  // Downloaded pieces, BiglyBT style: each pixel column shows how many of
-@@ -1238,6 +1340,7 @@
+@@ -1238,6 +1361,7 @@
  		state.torrents = data.torrents;
  		state.byHash = new Map(data.torrents.map((t) => [t.hash, t]));
  		state.stats = data.stats;
@@ -637,7 +658,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		state.ok = true;
  		reportJobs();
  		const c = $("#st-conn");
-@@ -1254,7 +1357,7 @@
+@@ -1254,7 +1378,7 @@
  		const c = $("#st-conn");
  		$("#st-port").hidden = true;
  		c.className = "err";
@@ -646,7 +667,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		if (c._html !== html) { c.innerHTML = html; c._html = html; }
  	}
  	timer = setTimeout(refresh, Math.max(1, prefs.interval) * 1000);
-@@ -1303,7 +1406,7 @@
+@@ -1303,7 +1427,7 @@
  		if (it.head) { m.insertAdjacentHTML("beforeend", `<div class="head">${esc(it.head)}</div>`); continue; }
  		const d = document.createElement("div");
  		d.className = "item" + (it.disabled ? " disabled" : "");
@@ -655,7 +676,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		d.onclick = () => { closeMenu(); it.run(); };
  		m.append(d);
  	}
-@@ -1345,7 +1448,7 @@
+@@ -1345,7 +1469,7 @@
  		{ label: "Al principio", k: "Ctrl+Inicio", run: () => movePos("top") },
  		{ label: "Al final", k: "Ctrl+Fin", run: () => movePos("bottom") },
  		"-",
@@ -664,7 +685,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		{ label: "Reubicar datos…", run: relocateDialog },
  		{ label: "Renombrar carpeta…", disabled: ts.length !== 1 || ts[0].files < 2, run: renameFolderDialog },
  		{ label: "Verificar datos", run: () => act("/api/action", { action: "recheck", hashes: hs }, "Verificación iniciada: se revisa cada pieza contra el .torrent") },
-@@ -1365,6 +1468,11 @@
+@@ -1365,6 +1489,11 @@
  			run: () => { if (c.on && visibleCols().length === 1) return; c.on = !c.on; savePrefs(); renderTable(); },
  		})),
  		"-",
@@ -676,7 +697,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		{ label: "Restablecer columnas", run: () => { prefs.columns = null; savePrefs(); renderTable(); } },
  		{ label: "Vista por defecto (orden y filtro)", run: () => {
  			prefs.sort = { col: "added", dir: -1 };
-@@ -1386,10 +1494,13 @@
+@@ -1386,10 +1515,13 @@
  		state.tagConf.order = o;
  		saveTagConf();
  	};
@@ -691,7 +712,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		{ label: "Opciones de etiqueta…", run: () => tagDialog(name) },
  		{ label: `Agregar a ${hs.length} seleccionado${hs.length === 1 ? "" : "s"}`, disabled: !hs.length, run: () => act("/api/edit-tags", { hashes: hs, add: [name] }) },
  		{ label: "Quitar de los seleccionados", disabled: !hs.length, run: () => act("/api/edit-tags", { hashes: hs, remove: [name] }) },
-@@ -1471,6 +1582,10 @@
+@@ -1471,6 +1603,10 @@
  		case "new-tag": return tagDialog(null);
  	}
  	if (!hs.length) return toast("Selecciona uno o más torrents");
@@ -702,7 +723,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  	if (cmd === "remove") return removeDialog();
  	if (cmd === "tags") return assignTagsDialog();
  	act("/api/action", { action: cmd, hashes: hs });
-@@ -1799,7 +1914,7 @@
+@@ -1799,7 +1935,7 @@
  function addDialog(files = []) {
  	let picked = [...files];
  	const m = modal("Agregar torrents", form(
@@ -711,7 +732,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		frow("Contenido", '<div id="add-content"></div>').replace('class="frow"', 'class="frow" id="add-content-row" hidden'),
  		frow("Enlaces magnet", `<textarea id="add-magnet" placeholder="magnet:?xt=urn:btih:…"></textarea><div class="hint">Enlaces magnet o URL de archivos .torrent, uno por línea.</div>`, "add-magnet"),
  		frow("Carpeta", folderPicker("add-dir", prefs.lastDir) + `<div class="hint">Vacío = la carpeta predeterminada de rTorrent.</div><div class="hint" id="add-space"></div>`),
-@@ -2041,7 +2156,7 @@
+@@ -2041,7 +2177,7 @@
  
  // A folder field with a browser of the folders on the computer running Tablero.
  function folderPicker(id, value) {
@@ -720,7 +741,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		`<button type="button" class="btn" data-fp-browse="${id}">Examinar…</button></div><div class="fp-panel" data-fp-for="${id}" hidden></div></div>`;
  }
  // Puts a path in the field scrolled to its end, where the folder's own name is.
-@@ -2105,6 +2220,11 @@
+@@ -2105,6 +2241,11 @@
  async function openFolder(hash, index, dir) {
  	try {
  		const r = await api("/api/open-folder", index !== undefined ? { hash, index } : dir !== undefined ? { hash, dir } : { hash });
@@ -732,7 +753,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		toast(r.demo ? `En el modo demo no hay carpetas reales: se abriría ${r.folder}` : `Abriendo ${r.folder}`);
  	} catch (e) { toast(e.message, true); }
  }
-@@ -2294,7 +2414,7 @@
+@@ -2294,7 +2435,7 @@
  			<label class="check"><input type="checkbox" id="op-tint"> Teñir las filas con el color de su primera etiqueta</label>
  			<label class="check"><input type="checkbox" id="op-tagbar"> Mostrar la barra de etiquetas sobre la lista</label></div>`),
  		frow("Filtro", '<select id="op-mode"><option value="any">Mostrar torrents con cualquiera de las etiquetas elegidas</option><option value="all">Mostrar solo torrents con todas las etiquetas elegidas</option></select>' +
@@ -741,7 +762,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		frow("Unidades", `<span class="seg">${[["bin", "Binarias: KiB, MiB, GiB"], ["dec", "Decimales: KB, MB, GB"]].map(([v, n]) =>
  			`<label><input type="radio" name="op-units" value="${v}"${prefs.units === v ? " checked" : ""}><span>${n}</span></label>`).join("")}</span>` +
  			'<div class="hint">Para tamaños, velocidades y límites. Binarias: 1 KiB = 1024 bytes, como cuenta rTorrent. Decimales: 1 KB = 1000 bytes, como los discos y la mayoría de las páginas.</div>'),
-@@ -2302,9 +2422,9 @@
+@@ -2302,9 +2443,9 @@
  		windowOptionsHTML(),
  		frow("rTorrent", toolBtn("power", "Apagar rTorrent…", 'id="op-shutdown"') +
  			'<div class="hint">Lo cierra de forma normal: guarda la sesión y avisa a los rastreadores.</div>' +
@@ -753,7 +774,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		frow("Red", `<label class="check"><input type="checkbox" id="op-lan"> Permitir abrir Tablero desde otros equipos de la red</label>
  			<div class="pw-row"><input type="password" id="op-pw" autocomplete="new-password" spellcheck="false"></div>
  			<div id="op-net"></div>`, "op-lan"),
-@@ -2324,7 +2444,7 @@
+@@ -2324,7 +2465,7 @@
  				if (net && net.local && (lan !== net.lan || pw)) {
  					try {
  						const r = await api("/api/access", { lan, password: pw });
@@ -762,7 +783,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  							pw ? "Contraseña guardada" : "Guardado");
  					} catch (e) { toast(e.message, true); return false; }
  				}
-@@ -2358,11 +2478,12 @@
+@@ -2358,11 +2499,12 @@
  		pwIn.placeholder = net.password ? "Contraseña (vacío = no cambiarla)" : "Contraseña (al menos 6 caracteres)";
  		pwIn.disabled = lanBox.disabled = !net.local;
  		pwIn.hidden = !lanBox.checked && !net.password;
@@ -780,7 +801,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  	};
  	lanBox.onchange = showNet;
  	fetch("/api/access").then((r) => r.json()).then((j) => { net = j; lanBox.checked = j.lan; showNet(); }).catch(() => { netInfo.textContent = ""; });
-@@ -2377,12 +2498,16 @@
+@@ -2377,12 +2519,16 @@
  	try { info = await api("/api/backups"); } catch (e) { return toast(e.message, true); }
  	const m = modal("Respaldo y restauración", form(
  		frow("Carpeta", folderPicker("bk-dir", info.folder || "") +
@@ -798,7 +819,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  			`<div class="hint">Incluye: ${BACKUP_HAS}</div>`)),
  		[{ label: "Cerrar" }, {
  			label: "Guardar", cls: "primary",
-@@ -2400,7 +2525,7 @@
+@@ -2400,7 +2546,7 @@
  			files.map((f) => `<tr><td><input type="radio" name="bk-pick" value="${esc(f.path)}"${f.path === chosen ? " checked" : ""}></td>` +
  				`<td>${esc(date(f.time))}</td><td>${size(f.size)}</td></tr>`).join("") + "</tbody></table>" :
  			'<div class="dimtxt">No hay respaldos en esta carpeta.</div>';
@@ -807,7 +828,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  	};
  	list(info.files);
  	const reload = async () => {
-@@ -2431,6 +2556,81 @@
+@@ -2431,6 +2577,81 @@
  			btn.disabled = false;
  		}
  		if (e.target.closest("#bk-restore") && chosen) restoreDialog(chosen);
@@ -889,7 +910,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  	});
  }
  
-@@ -2443,14 +2643,15 @@
+@@ -2443,14 +2664,15 @@
  		["tags", "Etiquetas y logos", info.has.tags, info.has.tags],
  		["prefs", "Preferencias de la interfaz (columnas, tema, filtros…)", info.has.prefs, info.has.prefs],
  		["access", "Acceso desde la red y su contraseña", false, info.has.access],
@@ -908,7 +929,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		[{ label: "Cancelar" }, {
  			label: "Restaurar", cls: "primary",
  			run: async () => {
-@@ -2467,7 +2668,7 @@
+@@ -2467,7 +2689,7 @@
  			},
  		}]);
  	const folders = (fs) => {
@@ -917,7 +938,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  			fs.map((f) => `<tr><td><code>${pathBreaks(f.from)}</code></td><td><code>${pathBreaks(f.to)}</code></td>` +
  				`<td><span class="${f.found === f.count ? "ok" : f.found ? "" : "bad"}">${f.found === f.count ? mark("good") : f.found ? "" : mark("bad")} ${f.found} de ${f.count}</span></td></tr>`).join("") + "</tbody></table>" : "";
  	};
-@@ -2501,7 +2702,7 @@
+@@ -2501,7 +2723,7 @@
  	const m = modal("Respaldo restaurado", form(
  		frow("Resultado", `<ul class="rs-done">${lines.map((x) => `<li>${x}</li>`).join("") || "<li>No había nada que restaurar.</li>"}</ul>`),
  		restart ? frow("rTorrent", toolBtn("power", "Apagar rTorrent…", 'id="rs-shutdown"') +
@@ -926,7 +947,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		[{ label: "Cerrar", cls: "primary", run: () => { render(); refresh(); } }]);
  	$("#rs-shutdown", m)?.addEventListener("click", shutdownDialog);
  }
-@@ -2552,7 +2753,7 @@
+@@ -2552,7 +2774,7 @@
  		s.incoming_seen ? `Ninguna ahora; la última hace ${eta(Math.max(60, Math.round(Date.now() / 1000 - s.incoming_seen)))}` : "Ninguna desde que se inició Tablero";
  	const m = modal("Estado del puerto", form(
  		frow("Puerto", `<div>${s.port || "?"} (TCP y UDP)${s.port_open ? "" : " · rTorrent no lo tiene abierto"}</div>` +
@@ -935,7 +956,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  			'<div class="hint">Por este puerto llegan las conexiones de otros pares. Si está cerrado igual puedes bajar, pero conectas con menos pares.</div>'),
  		frow("Cambiar puerto", `<div class="port-change"><input type="number" id="port-new" min="1024" max="65535" value="${portNext(s) || s.port || ""}">` +
  			`${toolBtn("check", "Cambiar", 'id="port-set"')}</div><div id="port-set-result"></div>` +
-@@ -2560,8 +2761,8 @@
+@@ -2560,8 +2782,8 @@
  		frow("Conexiones entrantes", `<div>${seen}</div><div class="hint">Si llegan pares desde internet, el puerto está abierto. Si no llega ninguno, puede estar cerrado o simplemente no hay pares buscando.</div>`),
  		frow("Prueba", `${toolBtn("search", "Probar puerto", 'id="port-test"')}<div id="port-result" class="port-result ${cls}">Estado: ${text}</div>` +
  			'<div class="hint">Le pide a ifconfig.co que intente conectarse a tu IP pública en este puerto. Solo se envía el número de puerto. Tablero hace esta prueba solo al iniciar.</div>'),
@@ -946,7 +967,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		[{ label: "Cerrar", cls: "primary" }]);
  	fetch("/api/local-ip").then((r) => r.json()).then((j) => { if (j.ip) $("#port-ip", m).textContent = ` (${j.ip})`; }).catch(() => {});
  	const setPort = async () => {
-@@ -2573,7 +2774,7 @@
+@@ -2573,7 +2795,7 @@
  			const line = cmdHTML(r.line);
  			out.className = "port-result " + (r.saved ? "ok" : "warn");
  			out.innerHTML = r.demo ? `Modo demo: aquí se guardaría el puerto ${r.port} en la configuración de rTorrent.` :
@@ -955,7 +976,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  				r.rc ? `No tengo permiso para escribir en <code>${esc(r.rc)}</code>. Cambia ahí la línea del puerto (o agrégala) por: ${line} y luego reinicia rTorrent.` :
  				`No encontré el archivo de configuración de rTorrent. En él, cambia la línea del puerto (o agrégala) por: ${line} y luego reinicia rTorrent.`;
  			refresh();
-@@ -2604,7 +2805,7 @@
+@@ -2604,7 +2826,7 @@
  			'<div class="hint">Tablero sigue abierto, pero sin conexión hasta que rTorrent vuelva.</div>'),
  		...(busy.length ? [frow("En curso", `<div class="warn">${mark("warn")} Reubicar datos sigue trabajando en ${busy.length === 1 ? esc(busy[0].name) : busy.length + " torrents"}. ` +
  			"Si apagas ahora, los archivos terminan de moverse, pero no se verifican ni se reanudan: al encender rTorrent, usa Verificar datos e Inicia el torrent.</div>")] : []),
@@ -964,7 +985,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		[{ label: "Cancelar" }, {
  			label: "Apagar", cls: "danger",
  			run: async () => {
-@@ -2627,6 +2828,27 @@
+@@ -2627,6 +2849,27 @@
  	render();
  }
  
@@ -992,7 +1013,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  function wire() {
  	$("#st-port").addEventListener("click", portDialog);
  	$("#toolbar").addEventListener("click", (e) => {
-@@ -2771,7 +2993,7 @@
+@@ -2771,7 +3014,7 @@
  		savePrefs();
  		renderTable();
  	});
@@ -1001,7 +1022,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		if (!e.target.classList.contains("grip")) return;
  		e.preventDefault();
  		e.stopPropagation();
-@@ -2779,20 +3001,16 @@
+@@ -2779,20 +3022,16 @@
  		const x0 = e.clientX, w0 = c.w, colEl = $$("#torrents col")[visibleCols().indexOf(c)];
  		th.draggable = false;
  		const move = (ev) => { c.w = Math.max(40, w0 + ev.clientX - x0); colEl.style.width = c.w + "px"; };
@@ -1026,7 +1047,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		e.preventDefault();
  		const kind = s.dataset.split, x0 = e.clientX, y0 = e.clientY, w0 = prefs.sidebarW, h0 = prefs.detailsH;
  		const move = (ev) => {
-@@ -2800,9 +3018,7 @@
+@@ -2800,9 +3039,7 @@
  			else prefs.detailsH = Math.max(32, Math.min(innerHeight - 200, h0 - (ev.clientY - y0)));
  			applyLayout();
  		};
@@ -1037,7 +1058,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  	}));
  
  	$(".tabs").addEventListener("click", (e) => {
-@@ -2844,7 +3060,7 @@
+@@ -2844,7 +3081,7 @@
  		if (!tr || !h) return;
  		e.preventDefault();
  		const run = tr.dataset.dirpath !== undefined ? () => openFolder(h, undefined, tr.dataset.dirpath) : () => openFolder(h, +tr.dataset.file);
@@ -1046,7 +1067,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  	});
  	$("#details-body").addEventListener("submit", (e) => {
  		e.preventDefault();
-@@ -2852,6 +3068,13 @@
+@@ -2852,6 +3089,13 @@
  		if (t && e.target.id === "opt-form") saveOptions(t);
  	});
  	document.addEventListener("click", (e) => {
@@ -1060,7 +1081,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		const b = e.target.closest("[data-copy-cmd]");
  		if (b) copy(b.dataset.copyCmd);
  	});
-@@ -2867,7 +3090,7 @@
+@@ -2867,7 +3111,7 @@
  		renderDetails();
  	});
  	// Column widths in Archivos, Pares and Trackers: drag the edge of a title.
@@ -1069,7 +1090,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		const g = e.target.closest("[data-tgrip]");
  		if (!g) return;
  		e.preventDefault();
-@@ -2886,17 +3109,13 @@
+@@ -2886,17 +3130,13 @@
  			$(`col[data-col="${col}"]`, table).style.width = w[col] + "px";
  			table.style.width = Object.values(w).reduce((n, x) => n + x, 0) + "px";
  		};
@@ -1090,7 +1111,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  	});
  	$("#details-body").addEventListener("click", (e) => {
  		if (e.target.closest("#opt-reset")) { state.optsHash = null; return renderDetails(); }
-@@ -2939,6 +3158,7 @@
+@@ -2939,6 +3179,7 @@
  	});
  
  	document.addEventListener("mouseover", (e) => {
@@ -1098,7 +1119,7 @@ diff -ruN escritorio/web/app.js android/web/app.js
  		const el = e.target.closest?.("[data-tip]");
  		if (!el) return;
  		const r = el.getBoundingClientRect();
-@@ -3091,10 +3311,20 @@
+@@ -3091,10 +3332,20 @@
  			}
  		} catch { /* keep the defaults */ }
  	}
@@ -1120,8 +1141,8 @@ diff -ruN escritorio/web/app.js android/web/app.js
 +	setTimeout(firstBackupFolder, 1500);
  })();
 diff -ruN escritorio/web/icons.js android/web/icons.js
---- escritorio/web/icons.js	2026-11-24 23:56:42.611886503 +0000
-+++ android/web/icons.js	2026-11-24 23:56:42.617391122 +0000
+--- escritorio/web/icons.js	2026-11-25 00:14:16.840387385 +0000
++++ android/web/icons.js	2026-11-25 00:14:16.971917605 +0000
 @@ -98,5 +98,8 @@
  "triangle-alert": "<path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\" /><path d=\"M12 9v4\" /><path d=\"M12 17h.01\" />",
  "arrow-right": "<path d=\"M5 12h14\" /><path d=\"m12 5 7 7-7 7\" />",
@@ -1133,8 +1154,8 @@ diff -ruN escritorio/web/icons.js android/web/icons.js
 +"upload": "<path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\" /><path d=\"m17 8-5-5-5 5\" /><path d=\"M12 3v12\" />"
  });
 diff -ruN escritorio/web/index.html android/web/index.html
---- escritorio/web/index.html	2026-11-24 23:56:42.611876161 +0000
-+++ android/web/index.html	2026-11-24 23:56:42.618098145 +0000
+--- escritorio/web/index.html	2026-11-25 00:14:16.840303103 +0000
++++ android/web/index.html	2026-11-25 00:14:16.974888292 +0000
 @@ -24,6 +24,7 @@
      <span class="down">↓ <b id="sp-down">0 B/s</b></span>
      <span class="up">↑ <b id="sp-up">0 B/s</b></span>

@@ -987,6 +987,26 @@ function statusTip(t) {
 	return t.status === "queued" ? "Espera su turno: rTorrent verifica un torrent a la vez" : t.status === "waiting" ? "Espera su turno: Tablero reubica un torrent a la vez" : messageText(t);
 }
 
+async function softReload(hint) {
+	if (hint.dataset.busy) return;
+	hint.dataset.busy = "1";
+	hint.textContent = "Actualizando…";
+	hint.classList.add("ready");
+	hint.style.transform = "translate(-50%, 55px)";
+	hint.hidden = false;
+	const t0 = Date.now();
+	try {
+		try { state.tagConf = await api("/api/tags"); } catch { /* keep the last ones */ }
+		await loadGeneral();
+		state.detailsFor = null;
+		state.historyKey = null;
+		await refresh();
+	} finally {
+		// Long enough to be seen, so it is clear that it did refresh.
+		setTimeout(() => { delete hint.dataset.busy; hint.hidden = true; hint.classList.remove("ready"); }, Math.max(0, 600 - (Date.now() - t0)));
+	}
+}
+
 // Touch: tapping an "i" (or a legend, or a "?") shows its text; a tap anywhere else hides it.
 function wireTouchTips() {
 	document.addEventListener("click", (e) => {
@@ -1009,8 +1029,9 @@ function wireTouchTips() {
 	document.addEventListener("scroll", () => { if (!$("#tip").hidden && !state.tipCanvas) hideTip(); }, true);
 }
 
-// Touch: two fingers dragged down together reload the page. One finger scrolls the list and a
-// pinch (fingers moving apart or together) zooms, so neither gets in the way.
+// Touch: two fingers dragged down together refresh everything. One finger scrolls the list and a
+// pinch (fingers moving apart or together) zooms, so neither gets in the way. It fetches again
+// in place instead of reloading the page, which would blank the screen for a moment.
 function wireTwoFingerReload() {
 	const hint = document.createElement("div");
 	hint.id = "reload-hint";
@@ -1019,7 +1040,7 @@ function wireTwoFingerReload() {
 	let start = null, ready = false;
 	const pts = (e) => [...e.touches].slice(0, 2).map((t) => [t.clientX, t.clientY]);
 	const gap = (p) => Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]);
-	const reset = () => { start = null; ready = false; hint.hidden = true; };
+	const reset = () => { start = null; ready = false; if (!hint.dataset.busy) hint.hidden = true; };
 	document.addEventListener("touchstart", (e) => {
 		const zoomed = window.visualViewport && visualViewport.scale > 1.05;   // two fingers then pan the zoomed page
 		if (e.touches.length === 2 && !zoomed && !modalOpen()) start = pts(e); else reset();
@@ -1035,7 +1056,7 @@ function wireTwoFingerReload() {
 		hint.textContent = ready ? "Suelta para recargar" : "Sigue bajando para recargar";
 		hint.style.transform = `translate(-50%, ${Math.min(dy, 110) * 0.5}px)`;
 	}, { passive: true });
-	document.addEventListener("touchend", () => { if (ready) location.reload(); reset(); });
+	document.addEventListener("touchend", () => { const go = ready; reset(); if (go) softReload(hint); });
 	document.addEventListener("touchcancel", reset);
 }
 
