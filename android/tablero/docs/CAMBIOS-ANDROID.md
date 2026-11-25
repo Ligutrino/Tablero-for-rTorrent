@@ -1,5 +1,10 @@
 # Cambios de la variante Android
 
+## 0.11-android.16-kotlin (25-11-2026, rama `kotlin`)
+
+- La hoja del botón Más pasa a cuadrícula de íconos (como la de Compartir): una fila por sección, y en pantallas anchas
+  las secciones lado a lado, así cabe entera sin desplazar. "Copiar identificador" se llama ahora "Hash".
+
 ## 0.11-android.15-kotlin (25-11-2026, rama `kotlin`)
 
 - Sin el ⋮ de arriba (lista con selección y detalle): la barra de acciones de abajo suma "Más", que abre una hoja desde
