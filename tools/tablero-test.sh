@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Prueba Tablero (android/tablero/src/main/python/tablero.py --android) contra el rtorrent de host.
-# Requiere native/out/host/librtorrent.so (tools/host-test.sh lo compila) y python3.
+# Prueba el backend Kotlin de Tablero (android/tablero/src/main/kotlin/cl/tablero/backend, en la JVM)
+# contra el rtorrent de host, con la misma prueba que tenía tablero.py (tools/tablero-smoke.py).
+# Requiere native/out/host/librtorrent.so (tools/host-test.sh lo compila), JDK 17+ y python3 (solo para la prueba).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W="${WORK:-/tmp/rtorrent-tablero-test}"
 BIN="${RTORRENT_BIN:-$ROOT/native/out/host/librtorrent.so}"
+TABLERO="$ROOT/tools/tablero-host/build/install/tablero/bin/tablero"
+[[ -x "$TABLERO" ]] || "$ROOT/android/gradlew" --no-daemon -q -p "$ROOT/tools/tablero-host" installDist
 [[ ! -e "$W" || -f "$W/.tablero-test" ]] || { echo "$W existe y no es de esta prueba" >&2; exit 1; }
 rm -rf "$W"; mkdir -p "$W"/{base/session,base/log,dl,cfg}; touch "$W/.tablero-test"
 cat > "$W/base/rtorrent.rc" <<RC
@@ -23,7 +26,7 @@ RC
 "$BIN" -n -o import="$W/base/rtorrent.rc" > "$W/base/log/stdout.log" 2>&1 &
 RT=$!
 for _ in $(seq 50); do [[ -S "$W/base/rpc.sock" ]] && break; sleep 0.2; done
-python3 "$ROOT/android/tablero/src/main/python/tablero.py" --android --scgi "$W/base/rpc.sock" \
+"$TABLERO" --android --scgi "$W/base/rpc.sock" --web "$ROOT/android/tablero/src/main/assets/web" \
   --config "$W/cfg" --archivos "$W/dl" --port 18090 > "$W/tablero.log" 2>&1 &
 TB=$!
 trap 'kill $TB $RT 2>/dev/null || true' EXIT

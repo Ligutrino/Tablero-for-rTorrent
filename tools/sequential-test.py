@@ -119,7 +119,9 @@ def stream_test():
     import urllib.request
     seed, sd = start("seed", 51000)
     leech, ld = start("leech", 51001, "throttle.global_down.max_rate.set_kb = 256")
-    tb = subprocess.Popen([sys.executable, TB, "--android", "--scgi", ld + "/rpc.sock", "--config", W + "/cfg",
+    # TABLERO: tablero.py, o el backend Kotlin (tools/tablero-host) con la carpeta web/ en TABLERO_WEB.
+    cmd = [sys.executable, TB] if TB.endswith(".py") else [TB, "--web", os.environ["TABLERO_WEB"]]
+    tb = subprocess.Popen(cmd + ["--android", "--scgi", ld + "/rpc.sock", "--config", W + "/cfg",
                            "--archivos", ld + "/dl", "--port", "18091"], stdout=open(W + "/tablero.log", "w"), stderr=subprocess.STDOUT)
     try:
         open(sd + "/dl/video.bin", "wb").write(data)

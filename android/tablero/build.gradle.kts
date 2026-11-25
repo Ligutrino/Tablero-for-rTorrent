@@ -1,11 +1,11 @@
-// App con Tablero como interfaz: WebView + tablero.py (Python embebido con Chaquopy) + :engine.
+// App con Tablero como interfaz: WebView + backend de Tablero en Kotlin (cl.tablero.backend) + :engine.
+// Rama kotlin: sin Python. La rama main sigue con tablero.py y Chaquopy.
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.chaquo.python")
 }
 
-// Mismas ABIs que librtorrent.so (Chaquopy incluye un intérprete de Python por ABI).
+// Mismas ABIs que librtorrent.so.
 // El Dockerfile pasa -Pabis=arm64-v8a,x86_64,... según ABIS.
 val abis = (findProperty("abis") as String?)?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
     ?: listOf("arm64-v8a")
@@ -18,8 +18,8 @@ android {
         applicationId = "cl.tablero.android"
         minSdk = 28
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.11-android.2"
+        versionCode = 9
+        versionName = "0.11-android.2-kotlin"
         ndk { abiFilters += abis }
     }
 
@@ -48,13 +48,6 @@ kotlin {
     compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
 }
 
-chaquopy {
-    defaultConfig {
-        // Tablero se prueba con 3.12 y 3.13. 3.12 coincide con el python3 de la imagen Docker,
-        // que Chaquopy usa para precompilar tablero.py.
-        version = "3.12"
-    }
-}
 
 dependencies {
     implementation(project(":engine"))

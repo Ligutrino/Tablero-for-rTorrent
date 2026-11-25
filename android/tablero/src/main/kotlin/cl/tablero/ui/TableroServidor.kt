@@ -2,36 +2,38 @@ package cl.tablero.ui
 
 import android.content.Context
 import android.util.Log
-import com.chaquo.python.PyObject
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
+import cl.tablero.backend.Options
+import cl.tablero.backend.Tablero
+import cl.tablero.backend.WebRoot
 import io.github.ligutrino.rtorrent.engine.android.EngineProvider
 import io.github.ligutrino.rtorrent.engine.android.EngineService
 import io.github.ligutrino.rtorrent.engine.android.EngineServiceHook
+import io.github.ligutrino.rtorrent.engine.android.LocalSocketConnector
 import io.github.ligutrino.rtorrent.engine.rtorrent.RtorrentEngine
 import java.io.File
+import java.io.FileNotFoundException
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
 
 /**
- * Corre tablero.py (Python embebido con Chaquopy) en un hilo propio, atado a la vida del servicio
- * en primer plano de :engine. Habla con rtorrent por el mismo socket Unix que usa :engine.
+ * Corre el backend de Tablero (cl.tablero.backend, la misma API que tablero.py, en Kotlin) en un hilo
+ * propio, atado a la vida del servicio en primer plano de :engine. Habla con rtorrent por el mismo
+ * socket Unix que usa :engine y sirve la interfaz web/ desde los assets de la app.
  * También pone la notificación del servicio (TableroAvisos), en lugar de la de :engine.
  */
 object TableroServidor : EngineServiceHook {
     const val PUERTO = 8090
     val url get() = "http://127.0.0.1:$PUERTO/"
     private const val TAG = "Tablero"
-    private var modulo: PyObject? = null
+    private var tablero: Tablero? = null
     private var hilo: Thread? = null
     private var avisos: TableroAvisos? = null
 
     override val ownsNotification: Boolean get() = avisos != null
 
     override fun onServiceStarted(context: Context, engine: RtorrentEngine) {
-        iniciar(context, engine.config.socketFile.absolutePath, engine.config.downloadDir.absolutePath,
-            engine.config.rcFile.absolutePath)
+        iniciar(context, engine.config.socketFile, engine.config.downloadDir.absolutePath, engine.config.rcFile.absolutePath)
         synchronized(this) {
             if (avisos == null) {
                 val app = context.applicationContext
@@ -46,40 +48,46 @@ object TableroServidor : EngineServiceHook {
         detener()
     }
 
+    /** web/ va en los assets (src/main/assets/web), sin cambios respecto de Tablero. */
+    private class Assets(ctx: Context) : WebRoot {
+        private val am = ctx.applicationContext.assets
+        override fun open(path: String): ByteArray? = try {
+            am.open("web/$path").use { it.readBytes() }
+        } catch (e: FileNotFoundException) { null }
+    }
+
     @Synchronized
-    fun iniciar(ctx: Context, socketScgi: String, carpetaDescargas: String, rc: String) {
+    fun iniciar(ctx: Context, socketScgi: File, carpetaDescargas: String, rc: String) {
         if (hilo?.isAlive == true) return
-        if (!Python.isStarted()) Python.start(AndroidPlatform(ctx.applicationContext))
-        val m = Python.getInstance().getModule("tablero").also { modulo = it }
-        val conf = File(ctx.filesDir, "tablero").absolutePath
-        val argv = listOf(
-            "--android",
-            "--scgi", socketScgi,
-            "--config", conf,
-            "--archivos", carpetaDescargas,
-            "--port", PUERTO.toString(),
+        val t = Tablero(Options(
+            scgi = LocalSocketConnector(socketScgi, 15_000),
+            scgiName = socketScgi.absolutePath,
+            web = Assets(ctx),
+            configDir = File(ctx.filesDir, "tablero").absolutePath,
+            port = PUERTO,
+            android = true,
+            userFiles = carpetaDescargas,
             // rtorrent corre con -o import=<rc>; así Tablero no tiene que buscarlo para "Cambiar puerto".
-            "--rtorrent-rc", rc,
-        )
+            rtorrentRc = rc,
+            home = ctx.filesDir.absolutePath,
+        ))
+        tablero = t
         hilo = thread(name = "tablero", isDaemon = true) {
-            try {
-                m.callAttr("run", argv.toTypedArray())
-            } catch (e: Throwable) {
-                Log.e(TAG, "tablero.py terminó con error", e)
-            }
+            try { t.run() } catch (e: Throwable) { Log.e(TAG, "Tablero terminó con error", e) }
         }
     }
 
     @Synchronized
     fun detener() {
-        runCatching { modulo?.callAttr("stop") }.onFailure { Log.w(TAG, "stop", it) }
+        runCatching { tablero?.stop() }.onFailure { Log.w(TAG, "stop", it) }
         hilo?.join(3000)
         hilo = null
+        tablero = null
     }
 
     /**
      * Salir (botón de la notificación): cierra la pantalla de Tablero, la quita de las apps recientes
-     * y detiene tablero.py. Después el servicio de :engine se detiene solo (alSalir de TableroAvisos).
+     * y detiene el servidor. Después el servicio de :engine se detiene solo (alSalir de TableroAvisos).
      */
     fun salir() {
         TableroActivity.cerrar()

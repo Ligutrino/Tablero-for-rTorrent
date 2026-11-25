@@ -15,7 +15,7 @@ class TableroApp : Application() {
             base.copy(downloadDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Tablero"))
         } else base
         EngineProvider.configure(config)
-        // tablero.py vive mientras vive el servicio del motor (reglas de siembra con la pantalla cerrada).
+        // El backend de Tablero vive mientras vive el servicio del motor (reglas de siembra con la pantalla cerrada).
         EngineProvider.addServiceHook(TableroServidor)
     }
 }

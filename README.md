@@ -18,34 +18,46 @@ LibreTorrent solo tienen que hablar con `TorrentEngine`.
               rtorrent (daemon, sin ncurses)
 ```
 
-## Interfaz: Tablero
+## Interfaz: Tablero (rama `kotlin`: backend en Kotlin, sin Python)
 
-`android/tablero` es la app principal: **Tablero 0.11-android.2** (tablero.py + web/) corriendo con
-Python embebido (Chaquopy 17.2, Python 3.12) y mostrado en una WebView, sobre el mismo `:engine`.
+> Esta es la rama **`kotlin`**. La rama **`main`** sigue con el build tradicional (tablero.py con Chaquopy).
+> Los cambios de Tablero entran primero en `main` y después se portan aquí: ver `android/tablero/PORTAR-A-KOTLIN.md`.
+
+`android/tablero` es la app principal: **Tablero 0.11-android.2** con la interfaz web de siempre (`web/`, sin cambios,
+en `src/main/assets/web`) mostrada en una WebView. La API que antes servía tablero.py la sirve ahora
+`cl.tablero.backend`, en Kotlin, con las mismas rutas, el mismo JSON y los mismos archivos de configuración
+(`tags.json`, `general.json`, `access.json`, `backup.json`, `prefs.json`), así que una instalación de `main`
+se actualiza a esta sin perder nada. El APK ya no lleva Python.
 
 ```
- TableroActivity (WebView) ──HTTP 127.0.0.1:8090──► tablero.py ──SCGI──┐
-          │  window.TableroAndroid (TableroPuente)                      ├─► rtorrent (socket Unix)
-          └──► EngineProvider / EngineService ──► :engine ──SCGI───────┘
+ TableroActivity (WebView) ──HTTP 127.0.0.1:8090──► cl.tablero.backend ──SCGI──┐
+          │  window.TableroAndroid (TableroPuente)                              ├─► rtorrent (socket Unix)
+          └──► EngineProvider / EngineService ──► :engine ──SCGI───────────────┘
 ```
 
+- `cl.tablero.backend` no usa nada de Android: corre igual en la JVM. `tools/tablero-host` lo compila para Linux, y
+  `tools/tablero-test.sh`, `tools/sequential-test.py` y `tools/tablero-compare.py` lo prueban contra un rtorrent real.
+  `tablero-compare.py` hace el mismo recorrido de la API con tablero.py y con el backend Kotlin y muestra lo que difiere.
+- `android/tablero/referencia/tablero.py` es el tablero.py que el backend reproduce (no va en el APK). Al traer un
+  Tablero nuevo desde `main`, su diff es lo que hay que portar.
 - Abrir la app arranca el servicio en primer plano. El servicio arranca rtorrent y, mediante un
-  `EngineServiceHook`, también tablero.py. Así las reglas de siembra de Tablero siguen funcionando con la pantalla cerrada.
+  `EngineServiceHook`, también el backend de Tablero. Así las reglas de siembra siguen funcionando con la pantalla cerrada.
 - La notificación del servicio la pone Tablero (`TableroAvisos`, como el ícono de la bandeja en escritorio):
   velocidades, torrents con error, **Pausar todo / Reanudar todo / Salir** y un aviso por cada descarga completa.
 - **Apagar rTorrent** en Tablero deja el motor detenido, no en error. La notificación ofrece **Encender**, y
   `startRtorrent()` / `restartRtorrent()` del puente usan el servicio. `exportFile()` abre "Guardar como" para respaldos.
-- **Cambiar puerto** en Tablero edita `rtorrent.rc` (se le pasa con `--rtorrent-rc`). `:engine` reescribe el rc en cada arranque, pero conserva
+- **Cambiar puerto** en Tablero edita `rtorrent.rc`. `:engine` reescribe el rc en cada arranque, pero conserva
   la línea de puerto si otro cliente la cambió (se compara con la marca `# puerto-de-RtorrentConfig:`).
-- El paquete original, la guía y `android.patch` están en `android/tablero/docs/`. Este repo trae un
-  arreglo encima de la versión que entregaste: `/api/shutdown` con rtorrent 0.16.17 (ver `docs/CAMBIOS-ANDROID.md`).
-- `android/tablero/cambios-locales.patch` tiene lo que este repo cambia sobre el paquete de Tablero, para volver a aplicarlo
-  al actualizar (`patch -p1` dentro de `src/main/python`):
+- El paquete original, la guía y `android.patch` están en `android/tablero/docs/` (hablan de tablero.py: valen para `main`).
+- `android/tablero/cambios-locales.patch` tiene lo que este repo cambia sobre el paquete de Tablero (contra `tablero.py` y `web/`).
+  En esta rama los cambios de `web/` están en `src/main/assets/web` y los de tablero.py ya están portados al backend:
   - El arreglo de `/api/shutdown` con rtorrent 0.16.17.
   - "Conexiones en total" con un mínimo y valor por defecto de 512, porque rtorrent 0.16 rechaza
     `network.max_open_sockets` por debajo de eso. Si había un 250 guardado, se sube a 512.
   - Descarga en orden y reproducción mientras baja (ver abajo).
   - El botón "Elegir con Android…" junto a Examinar… (ver abajo).
+- `versionCode` 9 y `versionName` `0.11-android.2-kotlin`: se instala encima del APK de `main` (8) con la misma firma.
+  Para volver al de `main` hay que desinstalar antes, porque Android no deja bajar de versión.
 
 ## Descarga en orden y reproducción mientras baja
 
@@ -136,7 +148,7 @@ Las descargas van a `/sdcard/Android/data/io.github.ligutrino.rtorrent.demo/file
 docker build --target hosttest .
 ```
 
-Compila rtorrent para Linux con las mismas recetas y ejecuta `tools/host-test`, `tools/tablero-test.sh` (la API de Tablero) y `tools/sequential-test.py` (descarga en orden y /stream con dos rtorrent). `tools/host-test` usa el código
+Compila rtorrent para Linux con las mismas recetas y ejecuta `tools/host-test`, `tools/tablero-test.sh` (la API de Tablero, servida por el backend Kotlin) y `tools/sequential-test.py` (descarga en orden y /stream con dos rtorrent). `tools/host-test` usa el código
 Kotlin real del motor (sin la parte Android). La prueba arranca el daemon, añade un magnet y un .torrent,
 verifica datos, pausa, reanuda, aplica límites, quita y borra archivos, adopta un daemon ya vivo, lo
 para y comprueba que la sesión se restaura. Fuera de Docker: `tools/host-test.sh`.
@@ -150,9 +162,12 @@ para y comprueba que la sesión se restaura. Fuera de Docker: `tools/host-test.s
 | `native/build.sh <abi>…` | Compilación cruzada con el NDK. Deja `native/out/<abi>/librtorrent.so` |
 | `native/patches/<paquete>/*.patch` | Parches que se aplican al desempaquetar: descarga en orden (`d.sequential`) |
 | `android/engine` | Módulo library Kotlin: API neutral, cliente XML-RPC, daemon y servicio |
-| `android/tablero` | App con Tablero (WebView + Chaquopy + puente) |
+| `android/tablero` | App con Tablero (WebView + backend Kotlin `cl.tablero.backend` + puente) |
+| `android/tablero/referencia/tablero.py` | El tablero.py que reproduce el backend (no va en el APK) |
 | `android/app` | App mínima de prueba |
 | `tools/host-test` | Prueba de integración en la JVM |
+| `tools/tablero-host` | El backend de Tablero en la JVM, para las pruebas |
+| `tools/tablero-compare.py` | Mismo recorrido de la API con tablero.py y con el backend Kotlin; muestra las diferencias |
 | `Dockerfile` | SDK 35 + NDK r27c, luego el binario, luego el APK (`out`); o `hosttest` |
 
 ### Detalles del binario

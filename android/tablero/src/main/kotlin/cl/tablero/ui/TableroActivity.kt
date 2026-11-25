@@ -27,7 +27,7 @@ import java.io.File
 import kotlin.concurrent.thread
 
 /**
- * Pantalla con Tablero. Al abrirse arranca el servicio del motor (rtorrent + tablero.py) y carga
+ * Pantalla con Tablero. Al abrirse arranca el servicio del motor (rtorrent + backend de Tablero) y carga
  * la interfaz cuando el servidor responde. Recibe también magnet: y .torrent de otras apps.
  *
  * Como la ventana GTK en escritorio: pantalla de espera mientras arranca Tablero, enlaces externos en
@@ -196,7 +196,7 @@ class TableroActivity : Activity() {
         val js = if (uri.scheme == "magnet") {
             "tableroAdd(" + JSONObject().put("magnets", JSONArray().put(uri.toString())) + ")"
         } else {
-            // tablero.py lee el .torrent por ruta: se copia al caché de la app.
+            // Tablero lee el .torrent por ruta: se copia al caché de la app.
             val f = File(cacheDir, "recibido-${System.currentTimeMillis()}.torrent")
             try {
                 contentResolver.openInputStream(uri)?.use { ent -> f.outputStream().use { ent.copyTo(it) } } ?: return
