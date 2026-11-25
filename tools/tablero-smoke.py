@@ -80,15 +80,16 @@ check("relocate", req("/api/relocate", {"hashes": [TH], "target": os.path.join(W
 time.sleep(2)
 check("tags quedaron en d.custom", req("/api/torrents"),
       lambda b: any(t["hash"] == TH and set(t["tags"]) == {"a", "b"} for t in b["torrents"]))
-check("general (BiglyBT por defecto)", req("/api/general"),
-      lambda b: b["general"]["max_sockets"] == 250 and b["general"]["peers_max"] == 50)
+check("general por defecto (512 en total, 50 y 4 por torrent)", req("/api/general"),
+      lambda b: b["general"]["max_sockets"] == 512 and b["general"]["peers_max"] == 50)
 time.sleep(1)
-# rtorrent 0.16 rechaza network.max_open_sockets < 512 ("minimum is 512"): el 250 de Tablero no se aplica.
-print("AVISO network.max_open_sockets =", rpc("network.max_open_sockets"), "(Tablero pidió 250; rtorrent 0.16 exige 512 o más)")
-check("general POST", req("/api/general", {"max_sockets": 300, "peers_max": 40, "uploads_max": 3}))
+check("general aplicado: network.max_open_sockets", (200, rpc("network.max_open_sockets")), lambda v: v == 512)
+st, body = req("/api/general", {"max_sockets": 300, "peers_max": 40, "uploads_max": 3})
+check("general bajo 512 rechazado (mínimo de rTorrent 0.16)", (200, st), lambda v: v == 400)
+check("general POST", req("/api/general", {"max_sockets": 600, "peers_max": 40, "uploads_max": 3}))
 time.sleep(1)
-check("general aplicado tras POST (por torrent)", (200, [rpc("d.peers_max", TH), rpc("d.uploads_max", TH)]),
-      lambda v: v == [40, 3])
+check("general aplicado tras POST", (200, [rpc("network.max_open_sockets"), rpc("d.peers_max", TH), rpc("d.uploads_max", TH)]),
+      lambda v: v == [600, 40, 3])
 hb = urllib.request.Request(B + "/api/torrents", headers={"Host": "evil.example:18090"})
 try:
     st = urllib.request.urlopen(hb, timeout=10).status

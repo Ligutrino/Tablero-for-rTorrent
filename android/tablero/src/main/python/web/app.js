@@ -2350,10 +2350,10 @@ async function limitsDialog() {
 		frow("Bajada máxima", num("lim-down", s.down_limit), "lim-down"),
 		frow("Subida máxima", num("lim-up", s.up_limit) + '<div class="hint">0 = sin límite. Se aplica a todos los torrents juntos; cada torrent puede tener su propio límite en la pestaña Opciones.</div>', "lim-up"),
 		frow("Conexiones", `<div class="opt-cols">
-			<div><span class="sub-l">En total</span>${pnum("lim-sockets", "max_sockets", "conexiones", g.rtorrent)}</div>
+			<div><span class="sub-l">En total</span>${pnum("lim-sockets", "max_sockets", "conexiones", g.rtorrent).replace('min="0"', 'min="512"')}</div>
 			<div><span class="sub-l">Pares por torrent</span>${pnum("lim-pmax", "peers_max", "pares", g.torrent)}</div>
 			<div><span class="sub-l">Subidas por torrent</span>${pnum("lim-umax", "uploads_max", "pares", g.torrent)}</div></div>` +
-			'<div class="hint">"En total" es para todos los torrents juntos y evita que muchas conexiones llenen el router y pongan lento el internet del resto de la casa. Pares y subidas por torrent valen para cada torrent sin valores propios en su pestaña Opciones; el mínimo de pares es la mitad. Vienen con los valores de BiglyBT (250, 50 y 4). Vacío = lo que diga rTorrent, en gris.</div>'),
+			'<div class="hint">"En total" es para todos los torrents juntos y evita que muchas conexiones llenen el router y pongan lento el internet del resto de la casa. Pares y subidas por torrent valen para cada torrent sin valores propios en su pestaña Opciones; el mínimo de pares es la mitad. Vienen con 512 en total (lo mínimo que acepta rTorrent) y los valores de BiglyBT por torrent (50 y 4). Vacío = lo que diga rTorrent, en gris.</div>'),
 		frow("Al sembrar", `<div class="opt-rules">
 			<label class="check"><input type="checkbox" id="lim-r-on"${gen.stop_ratio ? " checked" : ""}> Detener al llegar a una proporción de subida de ${snum("lim-ratio", gen.stop_ratio || 2, 0.1)}</label>
 			<label class="check"><input type="checkbox" id="lim-h-on"${gen.stop_hours ? " checked" : ""}> Detener después de ${snum("lim-hours", gen.stop_hours || 24, 0.5)} horas sembrando</label></div>` +

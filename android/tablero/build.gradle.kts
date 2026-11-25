@@ -18,7 +18,7 @@ android {
         applicationId = "cl.tablero.android"
         minSdk = 28
         targetSdk = 35
-        versionCode = 6
+        versionCode = 7
         versionName = "0.11-android.2"
         ndk { abiFilters += abis }
     }

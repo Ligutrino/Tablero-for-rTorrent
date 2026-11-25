@@ -104,10 +104,13 @@ class General:
     it was read from, to go back to it when a value is emptied."""
     KEYS = ("max_sockets", "peers_max", "uploads_max", "stop_ratio", "stop_hours")
     GLOBAL = {"max_sockets": "network.max_open_sockets"}
-    # Until changed: BiglyBT's defaults (250 connections in all, 50 per torrent, 4 uploads per
+    # Until changed: BiglyBT's per-torrent defaults (250 connections in all, 50 per torrent, 4 uploads per
     # torrent; uTorrent uses 200, 50 and 4). rTorrent's own (200 and 50 per torrent, about
     # 1000 in all) open many more connections and can slow down the rest of the network.
-    DEFAULTS = {"max_sockets": 250, "peers_max": 50, "uploads_max": 4, "stop_ratio": 0, "stop_hours": 0}
+    # rTorrent 0.16 rejects network.max_open_sockets below 512 ("minimum is 512"): that is the
+    # floor, and the default (BiglyBT's 250 does not fit).
+    MIN_SOCKETS = 512
+    DEFAULTS = {"max_sockets": MIN_SOCKETS, "peers_max": 50, "uploads_max": 4, "stop_ratio": 0, "stop_hours": 0}
 
     def __init__(self, path):
         self.path = path
@@ -144,8 +147,9 @@ class General:
             v = o.get(k)
             d[k] = None if v is None or v == "" else max(0, int(v))
         d.pop("peers_min")  # follows peers_max (half of it), as rTorrent's own defaults
-        if d["max_sockets"] is not None and d["max_sockets"] < 10:
-            raise ValueError("Deja al menos 10 conexiones en total, o el campo vacío")
+        if d["max_sockets"] is not None and d["max_sockets"] < self.MIN_SOCKETS:
+            raise ValueError("rTorrent pide al menos %d conexiones en total; usa %d o más, o deja el campo vacío"
+                             % (self.MIN_SOCKETS, self.MIN_SOCKETS))
         if d["peers_max"] is not None and d["peers_max"] < 1:
             raise ValueError("Deja al menos 1 par por torrent, o el campo vacío")
         d["stop_ratio"] = max(0.0, round(float(o.get("stop_ratio") or 0), 2))
@@ -166,6 +170,10 @@ class General:
             if orig.get("pid") != pid:
                 orig = {"pid": pid, **{k: v for k, v in zip(self.GLOBAL, now) if isinstance(v, int)}}
                 self.data["orig"] = orig
+                self._write()
+            # A value saved before the 512 floor (250 by default) would be rejected: raise it.
+            if self.data.get("max_sockets") is not None and self.data["max_sockets"] < self.MIN_SOCKETS:
+                self.data["max_sockets"] = self.MIN_SOCKETS
                 self._write()
             want = {k: self.data.get(k) if self.data.get(k) is not None else orig.get(k) for k in self.GLOBAL}
         calls = [(m + ".set", ["", want[k]]) for (k, m), cur in zip(self.GLOBAL.items(), now)

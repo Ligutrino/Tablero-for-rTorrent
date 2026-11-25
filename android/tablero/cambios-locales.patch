@@ -1,0 +1,80 @@
+diff -ru a/tablero.py b/tablero.py
+--- a/tablero.py	2026-11-25 00:28:42.653338820 +0000
++++ b/tablero.py	2026-11-25 00:28:42.656367049 +0000
+@@ -104,10 +104,13 @@
+     it was read from, to go back to it when a value is emptied."""
+     KEYS = ("max_sockets", "peers_max", "uploads_max", "stop_ratio", "stop_hours")
+     GLOBAL = {"max_sockets": "network.max_open_sockets"}
+-    # Until changed: BiglyBT's defaults (250 connections in all, 50 per torrent, 4 uploads per
++    # Until changed: BiglyBT's per-torrent defaults (250 connections in all, 50 per torrent, 4 uploads per
+     # torrent; uTorrent uses 200, 50 and 4). rTorrent's own (200 and 50 per torrent, about
+     # 1000 in all) open many more connections and can slow down the rest of the network.
+-    DEFAULTS = {"max_sockets": 250, "peers_max": 50, "uploads_max": 4, "stop_ratio": 0, "stop_hours": 0}
++    # rTorrent 0.16 rejects network.max_open_sockets below 512 ("minimum is 512"): that is the
++    # floor, and the default (BiglyBT's 250 does not fit).
++    MIN_SOCKETS = 512
++    DEFAULTS = {"max_sockets": MIN_SOCKETS, "peers_max": 50, "uploads_max": 4, "stop_ratio": 0, "stop_hours": 0}
+ 
+     def __init__(self, path):
+         self.path = path
+@@ -144,8 +147,9 @@
+             v = o.get(k)
+             d[k] = None if v is None or v == "" else max(0, int(v))
+         d.pop("peers_min")  # follows peers_max (half of it), as rTorrent's own defaults
+-        if d["max_sockets"] is not None and d["max_sockets"] < 10:
+-            raise ValueError("Deja al menos 10 conexiones en total, o el campo vacío")
++        if d["max_sockets"] is not None and d["max_sockets"] < self.MIN_SOCKETS:
++            raise ValueError("rTorrent pide al menos %d conexiones en total; usa %d o más, o deja el campo vacío"
++                             % (self.MIN_SOCKETS, self.MIN_SOCKETS))
+         if d["peers_max"] is not None and d["peers_max"] < 1:
+             raise ValueError("Deja al menos 1 par por torrent, o el campo vacío")
+         d["stop_ratio"] = max(0.0, round(float(o.get("stop_ratio") or 0), 2))
+@@ -167,6 +171,10 @@
+                 orig = {"pid": pid, **{k: v for k, v in zip(self.GLOBAL, now) if isinstance(v, int)}}
+                 self.data["orig"] = orig
+                 self._write()
++            # A value saved before the 512 floor (250 by default) would be rejected: raise it.
++            if self.data.get("max_sockets") is not None and self.data["max_sockets"] < self.MIN_SOCKETS:
++                self.data["max_sockets"] = self.MIN_SOCKETS
++                self._write()
+             want = {k: self.data.get(k) if self.data.get(k) is not None else orig.get(k) for k in self.GLOBAL}
+         calls = [(m + ".set", ["", want[k]]) for (k, m), cur in zip(self.GLOBAL.items(), now)
+                  if want[k] is not None and cur != want[k]]
+@@ -317,6 +325,9 @@
+                     break
+                 chunks.append(data)
+         raw = b"".join(chunks)
++        if not raw:
++            # rTorrent 0.16 cierra sin responder a system.shutdown.normal.
++            raise ConnectionError("rTorrent cerró la conexión sin responder")
+         sep = raw.find(b"\r\n\r\n")
+         payload = raw[sep + 4:] if sep >= 0 else raw
+         result, _ = xmlrpc.client.loads(payload.decode("utf-8", "replace"))
+@@ -1182,7 +1193,10 @@
+             session = self.rt.call("session.path")
+         except Exception:  # noqa: BLE001 - only for the cleanup below
+             session = ""
+-        self.rt.call("system.shutdown.normal")
++        try:
++            self.rt.call("system.shutdown.normal")
++        except ConnectionError:
++            pass  # rTorrent ya se está apagando: no contesta a esta llamada
+         if session:
+             threading.Thread(target=self._clean_session, args=(session,), daemon=True).start()
+         return {}
+diff -ru a/web/app.js b/web/app.js
+--- a/web/app.js	2026-11-25 00:28:42.654371929 +0000
++++ b/web/app.js	2026-11-25 00:28:42.656742966 +0000
+@@ -2350,10 +2350,10 @@
+ 		frow("Bajada máxima", num("lim-down", s.down_limit), "lim-down"),
+ 		frow("Subida máxima", num("lim-up", s.up_limit) + '<div class="hint">0 = sin límite. Se aplica a todos los torrents juntos; cada torrent puede tener su propio límite en la pestaña Opciones.</div>', "lim-up"),
+ 		frow("Conexiones", `<div class="opt-cols">
+-			<div><span class="sub-l">En total</span>${pnum("lim-sockets", "max_sockets", "conexiones", g.rtorrent)}</div>
++			<div><span class="sub-l">En total</span>${pnum("lim-sockets", "max_sockets", "conexiones", g.rtorrent).replace('min="0"', 'min="512"')}</div>
+ 			<div><span class="sub-l">Pares por torrent</span>${pnum("lim-pmax", "peers_max", "pares", g.torrent)}</div>
+ 			<div><span class="sub-l">Subidas por torrent</span>${pnum("lim-umax", "uploads_max", "pares", g.torrent)}</div></div>` +
+-			'<div class="hint">"En total" es para todos los torrents juntos y evita que muchas conexiones llenen el router y pongan lento el internet del resto de la casa. Pares y subidas por torrent valen para cada torrent sin valores propios en su pestaña Opciones; el mínimo de pares es la mitad. Vienen con los valores de BiglyBT (250, 50 y 4). Vacío = lo que diga rTorrent, en gris.</div>'),
++			'<div class="hint">"En total" es para todos los torrents juntos y evita que muchas conexiones llenen el router y pongan lento el internet del resto de la casa. Pares y subidas por torrent valen para cada torrent sin valores propios en su pestaña Opciones; el mínimo de pares es la mitad. Vienen con 512 en total (lo mínimo que acepta rTorrent) y los valores de BiglyBT por torrent (50 y 4). Vacío = lo que diga rTorrent, en gris.</div>'),
+ 		frow("Al sembrar", `<div class="opt-rules">
+ 			<label class="check"><input type="checkbox" id="lim-r-on"${gen.stop_ratio ? " checked" : ""}> Detener al llegar a una proporción de subida de ${snum("lim-ratio", gen.stop_ratio || 2, 0.1)}</label>
+ 			<label class="check"><input type="checkbox" id="lim-h-on"${gen.stop_hours ? " checked" : ""}> Detener después de ${snum("lim-hours", gen.stop_hours || 24, 0.5)} horas sembrando</label></div>` +

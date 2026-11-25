@@ -39,6 +39,11 @@ Python embebido (Chaquopy 17.2, Python 3.12) y mostrado en una WebView, sobre el
   la línea de puerto si otro cliente la cambió (se compara con la marca `# puerto-de-RtorrentConfig:`).
 - El paquete original, la guía y `android.patch` están en `android/tablero/docs/`. Este repo trae un
   arreglo encima de la versión que entregaste: `/api/shutdown` con rtorrent 0.16.17 (ver `docs/CAMBIOS-ANDROID.md`).
+- `android/tablero/cambios-locales.patch` tiene lo que este repo cambia sobre el paquete de Tablero, para volver a aplicarlo
+  al actualizar (`patch -p1` dentro de `src/main/python`):
+  - El arreglo de `/api/shutdown` con rtorrent 0.16.17.
+  - "Conexiones en total" con un mínimo y valor por defecto de 512, porque rtorrent 0.16 rechaza
+    `network.max_open_sockets` por debajo de eso. Si había un 250 guardado, se sube a 512.
 - `applicationId` = `cl.tablero.android`; se cambia en `android/tablero/build.gradle.kts`.
 
 ## Identidad ante trackers y pares
