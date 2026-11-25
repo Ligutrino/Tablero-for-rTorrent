@@ -168,10 +168,7 @@ private fun BarraSuperior(estado: Estado) {
     }, actions = {
         // De izquierda a derecha: buscar, ordenar, límites, opciones, puerto y encendido (este queda en la esquina).
         BotonBarra("search", "Buscar") { estado.buscando = true }
-        Box {
-            BotonBarra("arrow-up-down", "Ordenar") { estado.menu = "orden" }
-            MenuOrden(estado)
-        }
+        BotonBarra("arrow-up-down", "Ordenar") { estado.dialogo = Dialogo.Orden }
         BotonBarra("gauge", "Límites y conexiones") { estado.dialogo = Dialogo.Limites }
         BotonBarra("settings", "Opciones") { estado.dialogo = Dialogo.Opciones }
         BotonPuerto(estado)
@@ -252,33 +249,6 @@ private fun Velocidades(estado: Estado, lado: Boolean) {
     @Composable fun t(x: String, col: Color) = Text(x, fontSize = 13.sp, color = col, maxLines = 1, softWrap = false)
     if (lado) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { t(down, c.down); t(up, c.up) }
     else Column { t(down, c.down); t(up, c.up) }
-}
-
-@Composable
-private fun MenuOrden(estado: Estado) {
-    val c = LocalColores.current
-    DropdownMenu(expanded = estado.menu == "orden", onDismissRequest = { estado.menu = null }, containerColor = c.panel2) {
-        val o = estado.prefs.sort
-        Text("Ordenar por", fontSize = 12.sp, color = c.dim, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-        for (col in COLUMNS) {
-            DropdownMenuItem(text = { Text(col.title) }, leadingIcon = {
-                if (o.col == col.id) Icono(if (o.dir > 0) "arrow-up" else "arrow-down", size = 16.dp) else Spacer(Modifier.size(16.dp))
-            }, onClick = {
-                // Otra vez la misma columna invierte el orden, como un clic en el título de la columna.
-                estado.updatePrefs { p -> p.copy(sort = if (o.col == col.id) o.copy(dir = -o.dir) else Orden(col.id, if (col.id == "name") 1 else -1)) }
-                estado.menu = null
-            })
-        }
-        HorizontalDivider(color = c.line)
-        DropdownMenuItem(text = { Text("Datos de cada fila…") }, leadingIcon = { Icono("columns-3", size = 16.dp) }, onClick = {
-            estado.menu = null; estado.dialogo = Dialogo.Campos
-        })
-        DropdownMenuItem(text = { Text("Vista por defecto (orden y filtro)") }, leadingIcon = { Icono("rotate-ccw", size = 16.dp) }, onClick = {
-            estado.menu = null
-            estado.updatePrefs { it.copy(sort = Orden("added", -1)) }
-            estado.filtro = estado.filtro.copy(text = "")
-        })
-    }
 }
 
 /**

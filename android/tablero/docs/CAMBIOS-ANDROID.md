@@ -1,5 +1,10 @@
 # Cambios de la variante Android
 
+## 0.11-android.20-kotlin (25-11-2026, rama `kotlin`)
+
+- Ordenar la lista pasa de menú a diálogo, con el mismo estilo que Opciones: radios en dos columnas para el dato, Sentido
+  (Ascendente/Descendente), "Datos de cada fila…" y "Por defecto"; se aplica al Guardar.
+
 ## 0.11-android.19-kotlin (25-11-2026, rama `kotlin`)
 
 - Diálogos: la ventana ocupa toda la pantalla y la tarjeta se centra en el espacio libre de las barras del sistema. Antes

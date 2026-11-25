@@ -195,7 +195,7 @@ fun main(args: Array<String>) {
             }
             "etiquetas" -> { estado.sel = rows.take(2).map { it.hash }.toSet(); estado.dialogo = Dialogo.Etiquetas(rows.take(2).map { it.hash }) }
             "eliminar" -> { estado.sel = rows.take(1).map { it.hash }.toSet(); estado.dialogo = Dialogo.Eliminar(rows.take(1).map { it.hash }) }
-            "orden" -> estado.menu = "orden"
+            "orden" -> estado.dialogo = Dialogo.Orden
             "buscar" -> { estado.buscando = true; estado.filtro = estado.filtro.copy(text = rows.firstOrNull()?.name?.take(4) ?: "") }
             "claro" -> estado.updatePrefs { it.copy(theme = "light") }
             "agregar" -> estado.dialogo = Dialogo.Agregar()

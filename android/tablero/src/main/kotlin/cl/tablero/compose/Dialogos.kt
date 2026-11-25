@@ -1,5 +1,6 @@
 package cl.tablero.compose
 
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -51,6 +52,7 @@ sealed interface Dialogo {
     data class Etiquetas(val hashes: List<String>) : Dialogo
     data class Agregar(val magnets: String = "", val files: List<ArchivoLocal> = emptyList()) : Dialogo
     data object Campos : Dialogo
+    data object Orden : Dialogo
     data class Rastreadores(val hash: String) : Dialogo
     data class Duplicados(val dups: List<Map<String, Any?>>) : Dialogo
     /** Opciones de etiqueta; null: Nueva etiqueta. */
@@ -76,6 +78,7 @@ fun DialogoActual(estado: Estado) {
         is Dialogo.Etiquetas -> EtiquetasDialogo(estado, d.hashes)
         is Dialogo.Agregar -> AgregarDialogo(estado, d)
         Dialogo.Campos -> CamposDialogo(estado)
+        Dialogo.Orden -> OrdenDialogo(estado)
         is Dialogo.Rastreadores -> RastreadoresDialogo(estado, d.hash)
         is Dialogo.Duplicados -> DuplicadosDialogo(estado, d.dups)
         is Dialogo.Etiqueta -> EtiquetaDialogo(estado, d.name)
@@ -247,5 +250,42 @@ fun CamposDialogo(estado: Estado) {
             if (col.id == "name") continue
             CheckFila(col.id in sel, { if (it) sel.add(col.id) else sel.remove(col.id) }) { Text(col.title, fontSize = 14.sp) }
         }
+    }
+}
+
+/** Cómo se ordena la lista: la columna y el sentido (como un clic en el título de una columna de la web). */
+@Composable
+fun OrdenDialogo(estado: Estado) {
+    val o = estado.prefs.sort
+    var col by remember { mutableStateOf(o.col) }
+    var dir by remember { mutableStateOf(o.dir) }
+    var limpiar by remember { mutableStateOf(false) }
+    Ventana(estado, "Ordenar la lista", "Guardar", onOk = {
+        estado.updatePrefs { it.copy(sort = Orden(col, dir)) }
+        if (limpiar) estado.filtro = estado.filtro.copy(text = "")
+        true
+    }) {
+        Campo("Ordenar por") {
+            // Dos columnas de radios: son 20 datos y en una sola la lista no cabe sin desplazar.
+            Column {
+                for (par in COLUMNS.chunked(2)) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (k in par) Box(Modifier.weight(1f)) {
+                        Opcion(col == k.id, {
+                            if (col != k.id) dir = if (k.id == "name" || k.id == "pos") 1 else -1
+                            col = k.id
+                        }, if (k.id == "pos") "# (posición)" else k.title)
+                    }
+                    if (par.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+        Campo("Sentido") {
+            Seg(listOf("1" to "Ascendente ▲", "-1" to "Descendente ▼"), dir.toString()) { dir = it.toInt() }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            BotonHerr("columns-3", "Datos de cada fila…") { estado.dialogo = Dialogo.Campos }
+            BotonHerr("rotate-ccw", "Por defecto", on = limpiar) { col = "added"; dir = -1; limpiar = true }
+        }
+        Hint("Por defecto: por fecha de agregado, lo más nuevo arriba, y sin el texto de búsqueda.")
     }
 }
