@@ -1,5 +1,11 @@
 # Cambios de la variante Android
 
+## 0.11-android.10-kotlin (25-11-2026, rama `kotlin`)
+
+- Velocidades lado a lado cuando caben (y "Tablero" delante si también cabe); si no, una sobre otra.
+- El panel del gráfico deja libre la zona de los botones del sistema.
+- Menú de cada torrent y menú de etiqueta con un ícono en cada opción, como los demás menús; lo activo lleva ✓ a la derecha.
+
 ## 0.11-android.9-kotlin (25-11-2026, rama `kotlin`)
 
 - "Tablero" vuelve a la barra superior, junto a las velocidades, cuando cabe entero (tabletas, horizontal).

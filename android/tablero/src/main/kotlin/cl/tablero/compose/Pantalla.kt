@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -85,7 +86,9 @@ fun TableroPantalla(estado: Estado) {
                 bottomBar = {
                     // El gráfico de velocidad ocupa la mitad de abajo; el botón Agregar queda sobre él.
                     Column {
-                        if (det == null && estado.grafico) PanelVelocidad(estado, Modifier.fillMaxWidth().fillMaxHeight(0.45f))
+                        // Sin la barra de acciones debajo, el panel deja libre la zona de los botones del sistema.
+                        if (det == null && estado.grafico) PanelVelocidad(estado, Modifier.fillMaxWidth().fillMaxHeight(0.45f)
+                            .then(if (det != null || estado.sel.isNotEmpty()) Modifier else Modifier.background(c.panel).navigationBarsPadding()))
                         if (det != null || estado.sel.isNotEmpty()) BarraAcciones(estado)
                     }
                 },
@@ -207,36 +210,41 @@ private fun BotonEncendido(estado: Estado) {
     }
 }
 
-/** "Tablero" y las velocidades; el nombre se ve solo si cabe entero junto a ellas (pantallas anchas, horizontal). */
+/**
+ * "Tablero" y las velocidades, según el ancho que quede junto a los botones. En orden de preferencia:
+ * Tablero + velocidades lado a lado, Tablero + una sobre otra, solo lado a lado, solo una sobre otra.
+ */
 @Composable
 private fun TituloYVelocidades(estado: Estado, modifier: Modifier = Modifier) {
     androidx.compose.ui.layout.Layout(content = {
         Text("Tablero", fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
-        Velocidades(estado)
+        Velocidades(estado, lado = true)
+        Velocidades(estado, lado = false)
     }, modifier = modifier) { ms, cs ->
         val gap = 12.dp.roundToPx()
-        val v = ms[1].measure(cs.copy(minWidth = 0))
-        val t = ms[0].measure(androidx.compose.ui.unit.Constraints())
-        val both = t.width + gap + v.width <= cs.maxWidth
-        val w = if (both) t.width + gap + v.width else v.width
-        val h = maxOf(v.height, if (both) t.height else 0)
-        layout(w, h) {
-            if (both) { t.placeRelative(0, (h - t.height) / 2); v.placeRelative(t.width + gap, (h - v.height) / 2) }
-            else v.placeRelative(0, (h - v.height) / 2)
+        val libre = androidx.compose.ui.unit.Constraints()
+        val t = ms[0].measure(libre); val fila = ms[1].measure(libre); val col = ms[2].measure(libre)
+        val (titulo, v) = listOf(true to fila, true to col, false to fila, false to col)
+            .firstOrNull { (ti, v) -> (if (ti) t.width + gap else 0) + v.width <= cs.maxWidth } ?: (false to col)
+        val x = if (titulo) t.width + gap else 0
+        val h = maxOf(v.height, if (titulo) t.height else 0)
+        layout(minOf(x + v.width, cs.maxWidth), h) {
+            if (titulo) t.placeRelative(0, (h - t.height) / 2)
+            v.placeRelative(x, (h - v.height) / 2)
         }
     }
 }
 
 /** Bajada y subida de rTorrent entero (la barra de estado de la web); ⁽ˡ⁾ cuando hay límite. */
 @Composable
-private fun Velocidades(estado: Estado, modifier: Modifier = Modifier) {
+private fun Velocidades(estado: Estado, lado: Boolean) {
     val c = LocalColores.current
     val s = estado.stats
-    // Una sobre otra: con seis botones a la derecha no cabe más que esto.
-    Column(modifier) {
-        Text("↓ " + (if (s.downRate > 0) Formato.size(s.downRate) else "0 B") + "/s" + (if (s.downLimit > 0) " ⁽ˡ⁾" else ""), fontSize = 13.sp, color = c.down, maxLines = 1)
-        Text("↑ " + (if (s.upRate > 0) Formato.size(s.upRate) else "0 B") + "/s" + (if (s.upLimit > 0) " ⁽ˡ⁾" else ""), fontSize = 13.sp, color = c.up, maxLines = 1)
-    }
+    val down = "↓ " + (if (s.downRate > 0) Formato.size(s.downRate) else "0 B") + "/s" + (if (s.downLimit > 0) " ⁽ˡ⁾" else "")
+    val up = "↑ " + (if (s.upRate > 0) Formato.size(s.upRate) else "0 B") + "/s" + (if (s.upLimit > 0) " ⁽ˡ⁾" else "")
+    @Composable fun t(x: String, col: Color) = Text(x, fontSize = 13.sp, color = col, maxLines = 1, softWrap = false)
+    if (lado) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { t(down, c.down); t(up, c.up) }
+    else Column { t(down, c.down); t(up, c.up) }
 }
 
 @Composable
@@ -274,43 +282,45 @@ fun MenuTorrents(estado: Estado) {
     val ts = estado.objetivo()
     val hs = ts.map { it.hash }
     DropdownMenu(expanded = estado.menu == "torrents" && ts.isNotEmpty(), onDismissRequest = { estado.menu = null }, containerColor = c.panel2) {
-        fun item(label: String, enabled: Boolean = true, check: Boolean? = null, run: () -> Unit) = @Composable {
+        // Como los demás menús: un ícono a la izquierda de cada opción; ✓ a la derecha en lo que está activo.
+        fun item(label: String, icon: String? = null, enabled: Boolean = true, check: Boolean? = null, run: () -> Unit) = @Composable {
             DropdownMenuItem(text = { Text(label) }, enabled = enabled, leadingIcon = {
-                if (check == true) Icono("check", size = 16.dp) else Spacer(Modifier.size(16.dp))
-            }, onClick = { estado.menu = null; run() })
+                if (icon != null) Icono(icon, size = 16.dp) else Spacer(Modifier.size(16.dp))
+            }, trailingIcon = if (check == true) ({ Icono("check", size = 16.dp, tint = c.accent) }) else null,
+                onClick = { estado.menu = null; run() })
         }
         @Composable fun head(t: String) = Text(t, fontSize = 12.sp, color = c.dim, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
         fun copy(text: String) { clip.setText(AnnotatedString(text)); estado.aviso("Copiado") }
 
         head("Prioridad")
-        for ((v, n) in listOf(3 to "Alta", 2 to "Normal", 1 to "Baja")) item(n, check = ts.all { it.priority == v }) {
+        for ((v, n, i) in listOf(Triple(3, "Alta", "arrow-up"), Triple(2, "Normal", "circle"), Triple(1, "Baja", "arrow-down"))) item(n, i, check = ts.all { it.priority == v }) {
             estado.act("/api/action", mapOf("action" to "priority", "hashes" to hs, "value" to v))
         }()
         HorizontalDivider(color = c.line)
         head("Posición (#)")
-        for ((w, n) in listOf("up" to "Subir", "down" to "Bajar", "top" to "Al principio", "bottom" to "Al final")) item(n) {
+        for ((w, n, i) in listOf(Triple("up", "Subir", "arrow-up"), Triple("down", "Bajar", "arrow-down"), Triple("top", "Al principio", "arrow-up-to-line"), Triple("bottom", "Al final", "arrow-down-to-line"))) item(n, i) {
             estado.act("/api/move", mapOf("hashes" to hs, "where" to w))
         }()
         HorizontalDivider(color = c.line)
         if (ts.all { it.sequential != null }) {
             val on = ts.all { it.sequential == true }
-            item("Descargar en orden", check = on) {
+            item("Descargar en orden", "list-ordered", check = on) {
                 estado.act("/api/action", mapOf("action" to "sequential", "hashes" to hs, "value" to if (on) 0 else 1),
                     if (on) "Descarga normal (por rareza)" else "Descarga en orden: desde el principio, para ver o escuchar mientras baja")
             }()
         }
-        if (ts.size == 1) item("Abrir carpeta") { estado.abrirCarpeta(ts[0].hash) }()
-        item("Reubicar datos…") { estado.dialogo = Dialogo.Reubicar(hs) }()
-        item("Renombrar carpeta…", enabled = ts.size == 1 && ts[0].files >= 2) { estado.dialogo = Dialogo.RenombrarCarpeta(hs[0]) }()
-        item("Verificar datos") {
+        if (ts.size == 1) item("Abrir carpeta", "folder-open") { estado.abrirCarpeta(ts[0].hash) }()
+        item("Reubicar datos…", "folder") { estado.dialogo = Dialogo.Reubicar(hs) }()
+        item("Renombrar carpeta…", "pencil", enabled = ts.size == 1 && ts[0].files >= 2) { estado.dialogo = Dialogo.RenombrarCarpeta(hs[0]) }()
+        item("Verificar datos", "refresh-cw") {
             estado.act("/api/action", mapOf("action" to "recheck", "hashes" to hs), "Verificación iniciada: se revisa cada pieza contra el .torrent")
         }()
-        item("Quitar todas las etiquetas", enabled = ts.any { it.tags.isNotEmpty() }) {
+        item("Quitar todas las etiquetas", "tag", enabled = ts.any { it.tags.isNotEmpty() }) {
             estado.act("/api/set-tags", mapOf("hashes" to hs, "tags" to emptyList<String>()))
         }()
-        item(if (ts.size > 1) "Copiar nombres" else "Copiar nombre") { copy(ts.joinToString("\n") { it.name }) }()
-        item("Copiar identificador") { copy(ts.joinToString("\n") { it.hash }) }()
-        item("Copiar enlace magnet") { copy(ts.joinToString("\n") { magnetOf(it) }) }()
+        item(if (ts.size > 1) "Copiar nombres" else "Copiar nombre", "copy") { copy(ts.joinToString("\n") { it.name }) }()
+        item("Copiar identificador", "copy") { copy(ts.joinToString("\n") { it.hash }) }()
+        item("Copiar enlace magnet", "magnet") { copy(ts.joinToString("\n") { magnetOf(it) }) }()
     }
 }
 

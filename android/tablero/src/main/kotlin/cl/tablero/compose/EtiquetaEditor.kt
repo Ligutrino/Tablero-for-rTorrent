@@ -260,23 +260,23 @@ fun MenuEtiqueta(estado: Estado, name: String, expanded: Boolean, onDismiss: () 
     DropdownMenu(expanded, onDismiss, containerColor = c.panel2) {
         Box(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) { Chip(estado, name) }
         HorizontalDivider(color = c.line)
-        @Composable fun item(label: String, enabled: Boolean = true, run: () -> Unit) =
-            DropdownMenuItem(text = { Text(label) }, enabled = enabled, onClick = { onDismiss(); run() })
+        @Composable fun item(label: String, icon: String, enabled: Boolean = true, run: () -> Unit) =
+            DropdownMenuItem(text = { Text(label) }, enabled = enabled, leadingIcon = { Icono(icon, size = 16.dp) }, onClick = { onDismiss(); run() })
         if (name != NO_TAG) {
-            item(if (name in f) "Quitar del filtro" else if (f.isNotEmpty()) "Agregar al filtro" else "Filtrar por esta etiqueta") { estado.toggleTagFilter(name, true) }
+            item(if (name in f) "Quitar del filtro" else if (f.isNotEmpty()) "Agregar al filtro" else "Filtrar por esta etiqueta", "funnel") { estado.toggleTagFilter(name, true) }
             HorizontalDivider(color = c.line)
-            item("Opciones de etiqueta…") { estado.dialogo = Dialogo.Etiqueta(name) }
-            item("Agregar a ${hs.size} seleccionado${if (hs.size == 1) "" else "s"}", hs.isNotEmpty()) {
+            item("Opciones de etiqueta…", "settings") { estado.dialogo = Dialogo.Etiqueta(name) }
+            item("Agregar a ${hs.size} seleccionado${if (hs.size == 1) "" else "s"}", "plus", hs.isNotEmpty()) {
                 estado.act("/api/edit-tags", mapOf("hashes" to hs, "add" to listOf(name), "remove" to emptyList<String>()))
             }
-            item("Quitar de los seleccionados", hs.isNotEmpty()) {
+            item("Quitar de los seleccionados", "x", hs.isNotEmpty()) {
                 estado.act("/api/edit-tags", mapOf("hashes" to hs, "add" to emptyList<String>(), "remove" to listOf(name)))
             }
             HorizontalDivider(color = c.line)
-            item("Subir", i > 0) { move(-1) }
-            item("Bajar", i in 0 until order.size - 1) { move(1) }
+            item("Subir", "arrow-up", i > 0) { move(-1) }
+            item("Bajar", "arrow-down", i in 0 until order.size - 1) { move(1) }
             HorizontalDivider(color = c.line)
-            item("Eliminar etiqueta…") { estado.dialogo = Dialogo.EliminarEtiqueta(name) }
+            item("Eliminar etiqueta…", "trash-2") { estado.dialogo = Dialogo.EliminarEtiqueta(name) }
         }
     }
 }
