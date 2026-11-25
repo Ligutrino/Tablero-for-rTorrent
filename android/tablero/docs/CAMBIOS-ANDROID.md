@@ -1,5 +1,11 @@
 # Cambios de la variante Android
 
+## 0.11-android.17-kotlin (25-11-2026, rama `kotlin`)
+
+- El botón Más abre un menú normal (como los demás), cargado a la derecha y anclado al botón, en vez de la hoja.
+- "Posición en la lista (#)" solo aparece con la lista ordenada por #: rTorrent no tiene cola de descargas y el # solo
+  ordena la lista (y qué se verifica primero cuando hay varios esperando).
+
 ## 0.11-android.16-kotlin (25-11-2026, rama `kotlin`)
 
 - La hoja del botón Más pasa a cuadrícula de íconos (como la de Compartir): una fila por sección, y en pantallas anchas

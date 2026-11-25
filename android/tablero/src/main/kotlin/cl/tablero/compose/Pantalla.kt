@@ -125,7 +125,6 @@ fun TableroPantalla(estado: Estado) {
                 }
             }
         }
-        MenuTorrents(estado)
         DialogoActual(estado)
     }
 }
@@ -282,74 +281,56 @@ private fun MenuOrden(estado: Estado) {
     }
 }
 
-/** El menú de los torrents elegidos o del detalle abierto (rowMenu de la web). */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+/**
+ * El menú de los torrents elegidos o del detalle abierto (rowMenu de la web): sale del botón Más, a la derecha de la
+ * barra de acciones, con el mismo estilo que los demás menús. La prioridad no va aquí (pestaña Opciones de cada torrent).
+ */
 @Composable
 fun MenuTorrents(estado: Estado) {
     val c = LocalColores.current
     val clip = LocalClipboardManager.current
     val ts = estado.objetivo()
     val hs = ts.map { it.hash }
-    if (estado.menu != "torrents" || ts.isEmpty()) return
-    // Una hoja desde abajo (botón Más de la barra de acciones), con las mismas secciones que tenía el menú ⋮.
-    androidx.compose.material3.ModalBottomSheet(onDismissRequest = { estado.menu = null }, containerColor = c.panel2, sheetMaxWidth = 760.dp,
-        sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-      // Cuadrícula de íconos (como la hoja de Compartir): una fila por sección, cabe sin desplazar.
-      Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 8.dp, end = 8.dp, bottom = 12.dp),
-          verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(if (ts.size == 1) ts[0].name else "${ts.size} torrents", fontSize = 14.sp, color = c.dim, maxLines = 1,
-            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 4.dp))
-        fun tile(label: String, icon: String, enabled: Boolean = true, on: Boolean = false, run: () -> Unit) = @Composable {
-            val tint = if (!enabled) c.dim else if (on) c.accent else c.text
-            Column(Modifier.widthIn(min = 72.dp, max = 80.dp).clip(RoundedCornerShape(10.dp)).clickable(enabled = enabled) { estado.menu = null; run() }
-                .padding(horizontal = 2.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(if (on) c.sel else c.panel), contentAlignment = Alignment.Center) {
-                    Icono(icon, size = 22.dp, tint = tint)
-                }
-                Text(label, fontSize = 12.sp, color = tint, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = 14.sp)
-            }
+    DropdownMenu(expanded = estado.menu == "torrents" && ts.isNotEmpty(), onDismissRequest = { estado.menu = null }, containerColor = c.panel2) {
+        fun item(label: String, icon: String, enabled: Boolean = true, check: Boolean? = null, run: () -> Unit) = @Composable {
+            DropdownMenuItem(text = { Text(label) }, enabled = enabled, leadingIcon = { Icono(icon, size = 16.dp) },
+                trailingIcon = if (check == true) ({ Icono("check", size = 16.dp, tint = c.accent) }) else null,
+                onClick = { estado.menu = null; run() })
         }
-        // En pantallas anchas las secciones van una al lado de otra; en el teléfono, una debajo de otra.
-        @Composable fun seccion(t: String, body: @Composable () -> Unit) = Column {
-            Text(t, fontSize = 12.sp, color = c.dim, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
-            androidx.compose.foundation.layout.FlowRow { body() }
-        }
+        @Composable fun head(t: String) = Text(t, fontSize = 12.sp, color = c.dim, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
         fun copy(text: String) { clip.setText(AnnotatedString(text)); estado.aviso("Copiado") }
 
-        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-        // La prioridad no va aquí: se cambia por torrent en la pestaña Opciones.
-        seccion("Archivos") {
-            if (ts.all { it.sequential != null }) {
-                val on = ts.all { it.sequential == true }
-                tile("Descargar en orden", "list-ordered", on = on) {
-                    estado.act("/api/action", mapOf("action" to "sequential", "hashes" to hs, "value" to if (on) 0 else 1),
-                        if (on) "Descarga normal (por rareza)" else "Descarga en orden: desde el principio, para ver o escuchar mientras baja")
-                }()
-            }
-            if (ts.size == 1) tile("Abrir carpeta", "folder-open") { estado.abrirCarpeta(ts[0].hash) }()
-            tile("Reubicar…", "folder") { estado.dialogo = Dialogo.Reubicar(hs) }()
-            tile("Renombrar carpeta…", "pencil", enabled = ts.size == 1 && ts[0].files >= 2) { estado.dialogo = Dialogo.RenombrarCarpeta(hs[0]) }()
-            tile("Verificar", "refresh-cw") {
-                estado.act("/api/action", mapOf("action" to "recheck", "hashes" to hs), "Verificación iniciada: se revisa cada pieza contra el .torrent")
+        head("Archivos")
+        if (ts.all { it.sequential != null }) {
+            val on = ts.all { it.sequential == true }
+            item("Descargar en orden", "list-ordered", check = on) {
+                estado.act("/api/action", mapOf("action" to "sequential", "hashes" to hs, "value" to if (on) 0 else 1),
+                    if (on) "Descarga normal (por rareza)" else "Descarga en orden: desde el principio, para ver o escuchar mientras baja")
             }()
         }
-        seccion("Posición en la cola (#)") {
-            for ((w, n, i) in listOf(Triple("top", "Al principio", "arrow-up-to-line"), Triple("up", "Subir", "arrow-up"), Triple("down", "Bajar", "arrow-down"), Triple("bottom", "Al final", "arrow-down-to-line"))) tile(n, i) {
+        if (ts.size == 1) item("Abrir carpeta", "folder-open") { estado.abrirCarpeta(ts[0].hash) }()
+        item("Reubicar datos…", "folder") { estado.dialogo = Dialogo.Reubicar(hs) }()
+        item("Renombrar carpeta…", "pencil", enabled = ts.size == 1 && ts[0].files >= 2) { estado.dialogo = Dialogo.RenombrarCarpeta(hs[0]) }()
+        item("Verificar datos", "refresh-cw") {
+            estado.act("/api/action", mapOf("action" to "recheck", "hashes" to hs), "Verificación iniciada: se revisa cada pieza contra el .torrent")
+        }()
+        // El # solo ordena la lista (rTorrent no tiene cola de descargas): se ofrece cuando la lista está ordenada por #.
+        if (estado.detalle == null && estado.prefs.sort.col == "pos") {
+            HorizontalDivider(color = c.line)
+            head("Posición en la lista (#)")
+            for ((w, n, i) in listOf(Triple("top", "Al principio", "arrow-up-to-line"), Triple("up", "Subir", "arrow-up"), Triple("down", "Bajar", "arrow-down"), Triple("bottom", "Al final", "arrow-down-to-line"))) item(n, i) {
                 estado.act("/api/move", mapOf("hashes" to hs, "where" to w))
             }()
         }
-        seccion("Copiar") {
-            tile(if (ts.size > 1) "Nombres" else "Nombre", "copy") { copy(ts.joinToString("\n") { it.name }) }()
-            tile("Hash", "copy") { copy(ts.joinToString("\n") { it.hash }) }()
-            tile("Enlace magnet", "magnet") { copy(ts.joinToString("\n") { magnetOf(it) }) }()
-        }
-        seccion("Etiquetas") {
-            tile("Quitar todas", "tag", enabled = ts.any { it.tags.isNotEmpty() }) {
-                estado.act("/api/set-tags", mapOf("hashes" to hs, "tags" to emptyList<String>()))
-            }()
-        }
-        }
-      }
+        HorizontalDivider(color = c.line)
+        head("Copiar")
+        item(if (ts.size > 1) "Nombres" else "Nombre", "copy") { copy(ts.joinToString("\n") { it.name }) }()
+        item("Hash", "copy") { copy(ts.joinToString("\n") { it.hash }) }()
+        item("Enlace magnet", "magnet") { copy(ts.joinToString("\n") { magnetOf(it) }) }()
+        HorizontalDivider(color = c.line)
+        item("Quitar todas las etiquetas", "tag", enabled = ts.any { it.tags.isNotEmpty() }) {
+            estado.act("/api/set-tags", mapOf("hashes" to hs, "tags" to emptyList<String>()))
+        }()
     }
 }
 
@@ -371,7 +352,15 @@ private fun BarraAcciones(estado: Estado) {
         accion("square", "Detener") { estado.act("/api/action", mapOf("action" to "stop", "hashes" to hs())) }
         accion("tag", "Etiquetas") { estado.dialogo = Dialogo.Etiquetas(hs()) }
         accion("trash-2", "Eliminar", c.bad) { estado.dialogo = Dialogo.Eliminar(hs()) }
-        accion("ellipsis-vertical", "Más") { estado.menu = "torrents" }
+        // El menú sale de aquí, cargado a la derecha.
+        Box(Modifier.weight(1f)) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { estado.menu = "torrents" }.padding(vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Icono("ellipsis-vertical", size = 22.dp, tint = c.text)
+                Text("Más", fontSize = 11.sp, color = c.text)
+            }
+            MenuTorrents(estado)
+        }
     }
 }
 

@@ -189,6 +189,10 @@ fun main(args: Array<String>) {
             "cajon" -> estado.cajon = true
             "seleccion" -> estado.sel = rows.take(2).map { it.hash }.toSet()
             "menu" -> { estado.sel = rows.take(2).map { it.hash }.toSet(); frames(200); estado.menu = "torrents" }
+            "menu-pos" -> {
+                estado.updatePrefs { it.copy(sort = cl.tablero.compose.Orden("pos", 1)) }; frames(300)
+                estado.sel = rows.take(2).map { it.hash }.toSet(); frames(200); estado.menu = "torrents"
+            }
             "etiquetas" -> { estado.sel = rows.take(2).map { it.hash }.toSet(); estado.dialogo = Dialogo.Etiquetas(rows.take(2).map { it.hash }) }
             "eliminar" -> { estado.sel = rows.take(1).map { it.hash }.toSet(); estado.dialogo = Dialogo.Eliminar(rows.take(1).map { it.hash }) }
             "orden" -> estado.menu = "orden"
