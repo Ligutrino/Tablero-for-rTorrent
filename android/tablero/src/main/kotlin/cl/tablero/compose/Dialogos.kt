@@ -57,7 +57,6 @@ sealed interface Dialogo {
     data class Agregar(val magnets: String = "", val files: List<ArchivoLocal> = emptyList()) : Dialogo
     data object Campos : Dialogo
     data object Orden : Dialogo
-    data class Posicion(val hashes: List<String>) : Dialogo
     data class Rastreadores(val hash: String) : Dialogo
     data class Duplicados(val dups: List<Map<String, Any?>>) : Dialogo
     /** Opciones de etiqueta; null: Nueva etiqueta. */
@@ -84,7 +83,6 @@ fun DialogoActual(estado: Estado) {
         is Dialogo.Agregar -> AgregarDialogo(estado, d)
         Dialogo.Campos -> CamposDialogo(estado)
         Dialogo.Orden -> OrdenDialogo(estado)
-        is Dialogo.Posicion -> PosicionDialogo(estado, d.hashes)
         is Dialogo.Rastreadores -> RastreadoresDialogo(estado, d.hash)
         is Dialogo.Duplicados -> DuplicadosDialogo(estado, d.dups)
         is Dialogo.Etiqueta -> EtiquetaDialogo(estado, d.name)
@@ -296,20 +294,3 @@ fun OrdenDialogo(estado: Estado) {
     }
 }
 
-/** Mover en la lista (#): el # solo ordena la lista (rTorrent no tiene cola de descargas). */
-@Composable
-fun PosicionDialogo(estado: Estado, hashes: List<String>) {
-    val ts = hashes.mapNotNull { estado.byHash[it] }
-    var donde by remember { mutableStateOf("top") }
-    Ventana(estado, "Posición en la lista (#)", "Mover", onOk = {
-        estado.act("/api/move", mapOf("hashes" to hashes, "where" to donde)); true
-    }) {
-        NombresTorrents(ts)
-        Column {
-            for ((w, n, d) in listOf(Triple("top", "Al principio", "Queda con el # 1"), Triple("up", "Subir", "Un puesto más arriba"),
-                Triple("down", "Bajar", "Un puesto más abajo"), Triple("bottom", "Al final", "Queda con el # más alto")))
-                Opcion(donde == w, { donde = w }, n, d)
-        }
-        Hint("El # solo ordena la lista y decide cuál se revisa primero cuando hay varios esperando: rTorrent no tiene cola de descargas.")
-    }
-}

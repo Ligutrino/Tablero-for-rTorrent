@@ -86,7 +86,7 @@ fun campo(t: Torrent, id: String): String = when (id) {
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
-fun FilaTorrent(estado: Estado, t: Torrent, selected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
+fun FilaTorrent(estado: Estado, t: Torrent, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
     val c = LocalColores.current
     val fields = estado.prefs.fields
     val bg = when {
@@ -94,7 +94,7 @@ fun FilaTorrent(estado: Estado, t: Torrent, selected: Boolean, onClick: () -> Un
         estado.prefs.tint && t.tags.isNotEmpty() -> tagColor(estado.tagConf, t.tags[0]).copy(alpha = 0.16f).compositeOverBg(c.bg)
         else -> c.bg
     }
-    Row(Modifier.fillMaxWidth().background(bg).drawBehind {
+    Row(modifier.fillMaxWidth().background(bg).drawBehind {
         if (selected) drawRect(c.selLine, size = Size(3.dp.toPx(), size.height))
     }.combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp).weight(1f),

@@ -179,7 +179,7 @@ fun main(args: Array<String>) {
     val rows = estado.rows()
     val escenas = (a["--escena"] ?: "lista,grafico,cajon,seleccion,menu,etiquetas,eliminar,orden,buscar,claro,agregar,campos,general,archivos,lista-archivos,pares,rastreadores,piezas,velocidad,total,opciones,menu-detalle,general-claro,agregar-archivos,etiqueta,etiqueta-nueva,limites,puerto,ajustes,apagar,respaldos,reubicar,renombrar,duplicados").split(',')
     for (e in escenas) {
-        estado.sel = emptySet(); estado.dialogo = null; estado.menu = null; estado.cajon = false; estado.buscando = false; estado.grafico = false
+        estado.sel = emptySet(); estado.dialogo = null; estado.menu = null; estado.cajon = false; estado.buscando = false; estado.grafico = false; estado.moviendo = false
         estado.filtro = cl.tablero.compose.Filtro(); estado.detalle = null
         if (estado.prefs.theme != "dark") estado.updatePrefs { it.copy(theme = "dark") }
         frames(400)
@@ -191,7 +191,7 @@ fun main(args: Array<String>) {
             "menu" -> { estado.sel = rows.take(2).map { it.hash }.toSet(); frames(200); frames(100) }
             "menu-pos" -> {
                 estado.updatePrefs { it.copy(sort = cl.tablero.compose.Orden("pos", 1)) }; frames(300)
-                estado.sel = rows.take(2).map { it.hash }.toSet(); frames(200); estado.dialogo = Dialogo.Posicion(estado.sel.toList())
+                estado.sel = rows.take(2).map { it.hash }.toSet(); frames(200); estado.moviendo = true
             }
             "etiquetas" -> { estado.sel = rows.take(2).map { it.hash }.toSet(); estado.dialogo = Dialogo.Etiquetas(rows.take(2).map { it.hash }) }
             "eliminar" -> { estado.sel = rows.take(1).map { it.hash }.toSet(); estado.dialogo = Dialogo.Eliminar(rows.take(1).map { it.hash }) }

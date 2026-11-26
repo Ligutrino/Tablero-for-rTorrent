@@ -1,5 +1,11 @@
 # Cambios de la variante Android
 
+## 0.11-android.25-kotlin (25-11-2026, rama `kotlin`)
+
+- Posición (#) en vivo: el botón cambia la barra de abajo a Al principio, Subir, Bajar, Al final y Listo. Cada toque
+  mueve al tiro (los pedidos van de a uno), la lista se reordena con animación y sigue al primero de los elegidos.
+  Atrás o Listo vuelven a la barra de acciones. Sale el diálogo de Posición (.24).
+
 ## 0.11-android.24-kotlin (25-11-2026, rama `kotlin`)
 
 - Barra lateral hasta abajo otra vez: la línea sobre la versión queda a la altura del borde de la barra de navegación y la

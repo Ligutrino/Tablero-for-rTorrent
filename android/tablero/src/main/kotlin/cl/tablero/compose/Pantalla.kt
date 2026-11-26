@@ -1,5 +1,6 @@
 package cl.tablero.compose
 
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -276,6 +277,7 @@ private fun BarraAcciones(estado: Estado) {
     val uno = ts.size == 1
     val posicion = estado.detalle == null && estado.prefs.sort.col == "pos"
     val n = 9 + (if (posicion) 1 else 0)
+    if (estado.moviendo && posicion) { BarraMover(estado); return }
     BottomAppBar(containerColor = c.panel, contentPadding = PaddingValues(horizontal = 4.dp)) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val min = 68.dp
@@ -300,10 +302,33 @@ private fun BarraAcciones(estado: Estado) {
                 accion("refresh-cw", "Verificar") {
                     estado.act("/api/action", mapOf("action" to "recheck", "hashes" to hs()), "Verificación iniciada: se revisa cada pieza contra el .torrent")
                 }
-                if (posicion) accion("list-ordered", "Posición") { estado.dialogo = Dialogo.Posicion(hs()) }
+                if (posicion) accion("list-ordered", "Posición") { estado.moviendo = true }
                 accion("trash-2", "Eliminar", c.bad) { estado.dialogo = Dialogo.Eliminar(hs()) }
             }
         }
+    }
+}
+
+/**
+ * Posición (#) en vivo: cada toque mueve los elegidos y la lista se reordena detrás, siguiéndolos. Listo (o Atrás)
+ * vuelve a la barra de acciones.
+ */
+@Composable
+private fun BarraMover(estado: Estado) {
+    val c = LocalColores.current
+    BottomAppBar(containerColor = c.panel, contentPadding = PaddingValues(horizontal = 4.dp)) {
+        @Composable fun boton(icon: String, label: String, tint: Color = c.text, run: () -> Unit) {
+            Column(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable(onClick = run).padding(vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Icono(icon, size = 22.dp, tint = tint)
+                Text(label, fontSize = 11.sp, color = tint, maxLines = 1)
+            }
+        }
+        boton("arrow-up-to-line", "Al principio") { estado.mover("top") }
+        boton("arrow-up", "Subir") { estado.mover("up") }
+        boton("arrow-down", "Bajar") { estado.mover("down") }
+        boton("arrow-down-to-line", "Al final") { estado.mover("bottom") }
+        boton("check", "Listo", c.accent) { estado.moviendo = false }
     }
 }
 
@@ -368,10 +393,18 @@ private fun ListaTorrents(estado: Estado) {
         }
         return
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 88.dp)) {
+    val lista = rememberLazyListState()
+    // Al mover la posición, la lista sigue al primero de los elegidos para que se vea dónde quedó.
+    val primero = if (estado.moviendo) rows.indexOfFirst { it.hash in estado.sel } else -1
+    LaunchedEffect(primero) {
+        if (primero < 0) return@LaunchedEffect
+        val vis = lista.layoutInfo.visibleItemsInfo
+        if (vis.isEmpty() || primero <= vis.first().index || primero >= vis.last().index) lista.animateScrollToItem(maxOf(0, primero - 1))
+    }
+    LazyColumn(Modifier.fillMaxSize(), state = lista, contentPadding = PaddingValues(bottom = 88.dp)) {
         items(rows, key = { it.hash }) { t ->
             val selected = t.hash in estado.sel
-            FilaTorrent(estado, t, selected,
+            FilaTorrent(estado, t, selected, Modifier.animateItem(),
                 onClick = {
                     // Con algo elegido, tocar suma o quita; si no, abre su detalle.
                     if (estado.sel.isNotEmpty()) estado.sel = if (selected) estado.sel - t.hash else estado.sel + t.hash

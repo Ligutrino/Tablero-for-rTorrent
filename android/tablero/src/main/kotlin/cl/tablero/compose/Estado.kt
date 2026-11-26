@@ -168,6 +168,21 @@ class Estado(val api: Api, val plataforma: Plataforma, private val scope: Corout
     var cajon by mutableStateOf(false)
     /** El gráfico de velocidad abierto en la mitad de abajo de la lista. */
     var grafico by mutableStateOf(false)
+    /** La barra de abajo muestra Al principio/Subir/Bajar/Al final para los elegidos (botón Posición). */
+    var moviendo by mutableStateOf(false)
+    private val movLock = kotlinx.coroutines.sync.Mutex()
+
+    /** Mover los elegidos en la lista (#), de a un pedido a la vez para que varios toques seguidos no se pisen. */
+    fun mover(where: String) {
+        val hs = objetivo().map { it.hash }
+        if (hs.isEmpty()) return
+        scope.launch {
+            movLock.lock()
+            try { api.post("/api/move", mapOf("hashes" to hs, "where" to where)); refreshOnce() }
+            catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; aviso(e.texto(), true) }
+            finally { movLock.unlock() }
+        }
+    }
     var menu by mutableStateOf<String?>(null)
     /** El torrent cuyo detalle está abierto (sus pestañas), o null. */
     var detalle by mutableStateOf<String?>(null)
@@ -211,6 +226,7 @@ class Estado(val api: Api, val plataforma: Plataforma, private val scope: Corout
     fun atras(): Boolean {
         when {
             menu != null -> menu = null
+            moviendo -> moviendo = false
             dialogo != null -> dialogo = null
             cajon -> cajon = false
             detalle != null -> detalle = null
