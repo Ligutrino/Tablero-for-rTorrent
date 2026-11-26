@@ -1,5 +1,6 @@
 package cl.tablero.compose
 
+import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.graphics.drawscope.scale
@@ -261,28 +262,43 @@ private fun TituloYVelocidades(estado: Estado, onVelocidades: () -> Unit) {
 }
 
 /**
- * La marca de la web (.brand): el logo y "Tablero" con "para rTorrent" chico debajo, desde un tercio de "Tablero"
- * hasta su borde derecho (fitBrand de app.js); el logo va del alto de "Tablero" al pie de "para rTorrent".
+ * La marca de la web (.brand de app.css y fitBrand de app.js): "Tablero" de 18 en 600 con alto de línea 1; "para
+ * rTorrent" justo debajo (top: 18), en 400, del tamaño que lo hace medir 2/3 de "Tablero" y alineado a su borde
+ * derecho; el logo, a 8 de las letras, va de la tinta de arriba de la "T" a la de abajo de la "p".
+ * Las medidas de la fuente (Inter recortada, 2048 unidades): ascenso 1984, descenso 494, "T" 1490 de alto, "p" baja 418.
  */
 @Composable
 private fun MarcaTablero(estado: Estado) {
     val c = LocalColores.current
-    val medidor = androidx.compose.ui.text.rememberTextMeasurer()
-    val dens = androidx.compose.ui.platform.LocalDensity.current
-    // Como .brand-name de app.css: "Tablero" en 600 y "para rTorrent" en 400, con la fuente de la marca.
     val marca = estado.plataforma.fuenteMarca
-    val grande = androidx.compose.ui.text.TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold, lineHeight = 18.sp, fontFamily = marca)
+    val medidor = androidx.compose.ui.text.rememberTextMeasurer()
+    val grande = androidx.compose.ui.text.TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold, fontFamily = marca)
     val anchoT = medidor.measure("Tablero", grande).size.width
     val anchoP = medidor.measure("para rTorrent", androidx.compose.ui.text.TextStyle(fontSize = 10.sp, fontFamily = marca)).size.width
-    val chico = (10f * (anchoT * 2f / 3f) / anchoP.coerceAtLeast(1)).sp
-    val anchoTdp = with(dens) { anchoT.toDp() }
-    Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        LogoTablero(estado, 0.dp, Modifier.fillMaxHeight().aspectRatio(1f))
-        Column {
-            Text("Tablero", style = grande, color = c.text, maxLines = 1, softWrap = false)
-            Text("para rTorrent", fontSize = chico, lineHeight = chico, fontFamily = marca, color = c.dim, maxLines = 1, softWrap = false,
-                textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                modifier = Modifier.padding(start = anchoTdp / 3).width(anchoTdp * 2 / 3))
+    val chico = 10f * (anchoT * 2f / 3f) / anchoP.coerceAtLeast(1)
+    androidx.compose.ui.layout.Layout(content = {
+        LogoTablero(estado, 0.dp, Modifier)
+        Text("Tablero", style = grande, color = c.text, maxLines = 1, softWrap = false)
+        Text("para rTorrent", fontSize = chico.sp, fontFamily = marca, color = c.dim, maxLines = 1, softWrap = false)
+    }) { ms, _ ->
+        val em = 18.sp.toPx()
+        val emC = chico.sp.toPx()
+        val base = (1f - (1984f + 494f) / 2048f) / 2f + 1984f / 2048f      // la línea base en una línea de alto 1 (en em)
+        val baseT = base * em
+        val baseC = em + base * emC
+        val arriba = baseT - 1490f / 2048f * em
+        val abajo = baseC + 418f / 2048f * emC
+        val lado = (abajo - arriba).coerceAtLeast(16.dp.toPx()).roundToInt()
+        val gap = 8.dp.roundToPx()
+        val logo = ms[0].measure(androidx.compose.ui.unit.Constraints.fixed(lado, lado))
+        val t = ms[1].measure(androidx.compose.ui.unit.Constraints())
+        val p = ms[2].measure(androidx.compose.ui.unit.Constraints())
+        val bt = t[androidx.compose.ui.layout.FirstBaseline]; val bp = p[androidx.compose.ui.layout.FirstBaseline]
+        val alto = maxOf(arriba.roundToInt() + lado, (em + emC).roundToInt())
+        layout(lado + gap + t.width, alto) {
+            logo.place(0, arriba.roundToInt())
+            t.place(lado + gap, (baseT - bt).roundToInt())
+            p.place(lado + gap + t.width - p.width, (baseC - bp).roundToInt())
         }
     }
 }

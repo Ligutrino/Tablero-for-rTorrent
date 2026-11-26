@@ -1,5 +1,10 @@
 # Cambios de la variante Android
 
+## 0.11-android.31-kotlin (25-11-2026, rama `kotlin`)
+
+- Espaciado de la marca como .brand/fitBrand de la web: "para rTorrent" justo bajo "Tablero" (línea de alto 1), el logo
+  desde la tinta de arriba de la "T" hasta la de abajo de la "p", a 8 dp de las letras.
+
 ## 0.11-android.30-kotlin (25-11-2026, rama `kotlin`)
 
 - La marca usa la fuente de la web ("Tablero Marca": Inter 4.0, SIL OFL 1.1, recortada a "Tablero para rTorrent"):
