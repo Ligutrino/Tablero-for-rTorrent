@@ -1,5 +1,10 @@
 # Cambios de la variante Android
 
+## 0.11-android.28-kotlin (25-11-2026, rama `kotlin`)
+
+- Logo como el de la web recortado al dibujo (viewBox 4 4 56 56): cuadrado, sin esquinas redondeadas, la "r" negra entre
+  los colores y el punto claro más grande. "Tablero" en peso medio.
+
 ## 0.11-android.27-kotlin (25-11-2026, rama `kotlin`)
 
 - Logo sin el marco negro: el dibujo a sangre del ícono de la app, con esquinas redondeadas.

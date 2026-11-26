@@ -1,5 +1,6 @@
 package cl.tablero.compose
 
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -268,7 +269,7 @@ private fun MarcaTablero(estado: Estado) {
     val c = LocalColores.current
     val medidor = androidx.compose.ui.text.rememberTextMeasurer()
     val dens = androidx.compose.ui.platform.LocalDensity.current
-    val grande = androidx.compose.ui.text.TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold, lineHeight = 18.sp)
+    val grande = androidx.compose.ui.text.TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium, lineHeight = 18.sp)
     val anchoT = medidor.measure("Tablero", grande).size.width
     val anchoP = medidor.measure("para rTorrent", androidx.compose.ui.text.TextStyle(fontSize = 10.sp)).size.width
     val chico = (10f * (anchoT * 2f / 3f) / anchoP.coerceAtLeast(1)).sp
@@ -279,7 +280,7 @@ private fun MarcaTablero(estado: Estado) {
             Text("Tablero", style = grande, color = c.text, maxLines = 1, softWrap = false)
             Text("para rTorrent", fontSize = chico, lineHeight = chico, color = c.dim, maxLines = 1, softWrap = false,
                 textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                modifier = Modifier.padding(start = anchoTdp / 3, top = 2.dp).width(anchoTdp * 2 / 3))
+                modifier = Modifier.padding(start = anchoTdp / 3).width(anchoTdp * 2 / 3))
         }
     }
 }
@@ -294,29 +295,34 @@ fun LogoTablero(estado: Estado, size: androidx.compose.ui.unit.Dp, modifier: Mod
     val c = LocalColores.current
     val sinConexion = estado.errorConexion != null || estado.conectado == false
     val conError = !sinConexion && estado.torrents.any { it.status == "error" }
-    // El dibujo del ícono de la app (a sangre, sin el marco negro de la web), en su cuadro de 108.
-    androidx.compose.foundation.Canvas(modifier.clip(RoundedCornerShape(18))) {
-        val k = this.size.width / 108f
+    // El logo de la web recortado al dibujo (viewBox 4 4 56 56, sin el marco): cuadrado, la "r" negra entre los colores.
+    androidx.compose.foundation.Canvas(modifier) {
+        val k = this.size.width / 56f
         fun p(d: String) = androidx.compose.ui.graphics.vector.PathParser().parsePathString(d).toPath()
-        val azul = p("M0,0H37.36V108H0Z")
-        val amarillo = p("M37.36,0H108V41.52H54.0A16.64,16.64 0 0,0 37.36,58.16Z")
-        val rojo = p("M68.56,41.52H108V108H47.76V58.16A6.24,6.24 0 0,1 54.0,51.92H68.56Z")
-        val erre = p("M37.36,58.16A16.64,16.64 0 0,1 54.0,41.52H68.56V51.92H54.0A6.24,6.24 0 0,0 47.76,58.16V108H37.36Z")
-        val centro = androidx.compose.ui.geometry.Offset(72.72f, 72.72f)
+        fun o(x: Float, y: Float) = androidx.compose.ui.geometry.Offset(x, y)
+        fun sz(w: Float, h: Float) = androidx.compose.ui.geometry.Size(w, h)
+        val amarillo = p("M16 4h44v16H32a16 16 0 0 0-16 16z")
+        val rojo = p("M46 20h14v40H26V36a6 6 0 0 1 6-6h14z")
+        val centro = o(50f, 50f)
         scale(k, k, pivot = androidx.compose.ui.geometry.Offset.Zero) {
-            if (sinConexion) {
-                val st = androidx.compose.ui.graphics.drawscope.Stroke(width = 5f)
-                for (x in listOf(azul, amarillo, rojo)) drawPath(x, c.dim, style = st)
-                drawCircle(c.dim, radius = 6.24f, center = centro, style = st)
-                return@scale
+            translate(-4f, -4f) {
+                if (sinConexion) {
+                    val st = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5f)
+                    drawRect(c.dim, topLeft = o(4f, 4f), size = sz(12f, 56f), style = st)
+                    drawPath(amarillo, c.dim, style = st); drawPath(rojo, c.dim, style = st)
+                    drawCircle(c.dim, radius = 6f, center = centro, style = st)
+                    return@translate
+                }
+                drawRect(Color(0xFF1A1A1A), topLeft = o(4f, 4f), size = sz(56f, 56f))
+                drawRect(Color(0xFF1D4E9E), topLeft = o(4f, 4f), size = sz(12f, 56f))
+                drawPath(amarillo, Color(0xFFF2C200))
+                drawPath(rojo, Color(0xFFD7262E))
+                if (conError) {
+                    drawCircle(Color(0xFFF2C200), radius = 9f, center = o(49f, 48f))
+                    drawRect(Color(0xFF1A1A1A), topLeft = o(47.4f, 42f), size = sz(3.2f, 7.5f))
+                    drawCircle(Color(0xFF1A1A1A), radius = 1.8f, center = o(49f, 52.5f))
+                } else drawCircle(Color(0xFFF2EFE6), radius = 6f, center = centro)
             }
-            drawPath(azul, Color(0xFF1D4E9E)); drawPath(amarillo, Color(0xFFF2C200)); drawPath(rojo, Color(0xFFD7262E))
-            drawPath(erre, Color(0xFF1A1A1A))
-            if (conError) {
-                drawCircle(Color(0xFFF2C200), radius = 17f, center = centro)
-                drawRect(Color(0xFF1A1A1A), topLeft = androidx.compose.ui.geometry.Offset(69.7f, 61f), size = androidx.compose.ui.geometry.Size(6f, 15f))
-                drawCircle(Color(0xFF1A1A1A), radius = 3.4f, center = androidx.compose.ui.geometry.Offset(72.72f, 82.5f))
-            } else drawCircle(Color(0xFFF2EFE6), radius = 6.24f, center = centro)
         }
     }
 }
