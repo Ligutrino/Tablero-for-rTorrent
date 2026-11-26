@@ -237,3 +237,7 @@ es bloqueante y no usa corrutinas, se usa bien desde Java y RxJava (`Single.from
 
 Edita `native/sources.lock` (versión, nombre de archivo, sha256, URLs) y vuelve a compilar. El
 primer URL es el archivo de Ubuntu (estable y con sha256 conocido) y el segundo es el upstream.
+
+---
+
+**English:** build instructions are in [BUILDING.md](BUILDING.md).
