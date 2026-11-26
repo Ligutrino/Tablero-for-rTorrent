@@ -10,3 +10,6 @@ android/local.properties
 android/.idea/
 android/engine/src/main/jniLibs/
 *.iml
+android/debug.keystore
+__pycache__/
+*.pyc
