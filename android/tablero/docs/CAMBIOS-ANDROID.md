@@ -1,5 +1,11 @@
 # Cambios de la variante Android
 
+## 0.11-android.27-kotlin (25-11-2026, rama `kotlin`)
+
+- Logo sin el marco negro: el dibujo a sangre del ícono de la app, con esquinas redondeadas.
+- Marca como la de la web: "Tablero" con "para rTorrent" chico debajo, desde un tercio de "Tablero" hasta su borde
+  derecho; el logo tiene el alto de las dos líneas.
+
 ## 0.11-android.26-kotlin (25-11-2026, rama `kotlin`)
 
 - Barra de arriba: el logo de Tablero a la izquierda del título (queda solo el logo si el título no cabe). Cambia con el

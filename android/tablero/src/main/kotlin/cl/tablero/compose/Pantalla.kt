@@ -1,5 +1,6 @@
 package cl.tablero.compose
 
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.height
@@ -237,10 +238,7 @@ private fun TituloYVelocidades(estado: Estado, onVelocidades: () -> Unit) {
     // Solo las velocidades abren el gráfico; el logo y el título no hacen nada.
     val toque = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onVelocidades).padding(horizontal = 4.dp, vertical = 2.dp)
     androidx.compose.ui.layout.Layout(content = {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LogoTablero(estado, 22.dp)
-            Text("Tablero", fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
-        }
+        MarcaTablero(estado)
         LogoTablero(estado, 22.dp)
         Box(toque) { Velocidades(estado, lado = true) }
         Box(toque) { Velocidades(estado, lado = false) }
@@ -262,38 +260,63 @@ private fun TituloYVelocidades(estado: Estado, onVelocidades: () -> Unit) {
 }
 
 /**
+ * La marca de la web (.brand): el logo y "Tablero" con "para rTorrent" chico debajo, desde un tercio de "Tablero"
+ * hasta su borde derecho (fitBrand de app.js); el logo va del alto de "Tablero" al pie de "para rTorrent".
+ */
+@Composable
+private fun MarcaTablero(estado: Estado) {
+    val c = LocalColores.current
+    val medidor = androidx.compose.ui.text.rememberTextMeasurer()
+    val dens = androidx.compose.ui.platform.LocalDensity.current
+    val grande = androidx.compose.ui.text.TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold, lineHeight = 18.sp)
+    val anchoT = medidor.measure("Tablero", grande).size.width
+    val anchoP = medidor.measure("para rTorrent", androidx.compose.ui.text.TextStyle(fontSize = 10.sp)).size.width
+    val chico = (10f * (anchoT * 2f / 3f) / anchoP.coerceAtLeast(1)).sp
+    val anchoTdp = with(dens) { anchoT.toDp() }
+    Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        LogoTablero(estado, 0.dp, Modifier.fillMaxHeight().aspectRatio(1f))
+        Column {
+            Text("Tablero", style = grande, color = c.text, maxLines = 1, softWrap = false)
+            Text("para rTorrent", fontSize = chico, lineHeight = chico, color = c.dim, maxLines = 1, softWrap = false,
+                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                modifier = Modifier.padding(start = anchoTdp / 3, top = 2.dp).width(anchoTdp * 2 / 3))
+        }
+    }
+}
+
+/**
  * El logo de Tablero (el mismo del ícono de la app y de la web), según el estado, como el ícono de la notificación:
  * a color si todo va bien; con un "!" amarillo en el círculo si hay torrents con error; solo el contorno, apagado, si
  * no hay conexión con rTorrent.
  */
 @Composable
-fun LogoTablero(estado: Estado, size: androidx.compose.ui.unit.Dp) {
+fun LogoTablero(estado: Estado, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier.size(size)) {
     val c = LocalColores.current
     val sinConexion = estado.errorConexion != null || estado.conectado == false
     val conError = !sinConexion && estado.torrents.any { it.status == "error" }
-    androidx.compose.foundation.Canvas(Modifier.size(size)) {
-        val k = this.size.width / 64f
+    // El dibujo del ícono de la app (a sangre, sin el marco negro de la web), en su cuadro de 108.
+    androidx.compose.foundation.Canvas(modifier.clip(RoundedCornerShape(18))) {
+        val k = this.size.width / 108f
         fun p(d: String) = androidx.compose.ui.graphics.vector.PathParser().parsePathString(d).toPath()
-        val borde = p("M16 4h44v16H32a16 16 0 0 0-16 16z")
-        val rojo = p("M46 20h14v40H26V36a6 6 0 0 1 6-6h14z")
+        val azul = p("M0,0H37.36V108H0Z")
+        val amarillo = p("M37.36,0H108V41.52H54.0A16.64,16.64 0 0,0 37.36,58.16Z")
+        val rojo = p("M68.56,41.52H108V108H47.76V58.16A6.24,6.24 0 0,1 54.0,51.92H68.56Z")
+        val erre = p("M37.36,58.16A16.64,16.64 0 0,1 54.0,41.52H68.56V51.92H54.0A6.24,6.24 0 0,0 47.76,58.16V108H37.36Z")
+        val centro = androidx.compose.ui.geometry.Offset(72.72f, 72.72f)
         scale(k, k, pivot = androidx.compose.ui.geometry.Offset.Zero) {
             if (sinConexion) {
-                val st = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f)
-                drawRoundRect(c.dim, size = androidx.compose.ui.geometry.Size(64f, 64f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f), style = st)
-                drawRect(c.dim, topLeft = androidx.compose.ui.geometry.Offset(4f, 4f), size = androidx.compose.ui.geometry.Size(12f, 56f), style = st)
-                drawPath(borde, c.dim, style = st); drawPath(rojo, c.dim, style = st)
-                drawCircle(c.dim, radius = 6f, center = androidx.compose.ui.geometry.Offset(50f, 50f), style = st)
+                val st = androidx.compose.ui.graphics.drawscope.Stroke(width = 5f)
+                for (x in listOf(azul, amarillo, rojo)) drawPath(x, c.dim, style = st)
+                drawCircle(c.dim, radius = 6.24f, center = centro, style = st)
                 return@scale
             }
-            drawRoundRect(Color(0xFF1A1A1A), size = androidx.compose.ui.geometry.Size(64f, 64f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f))
-            drawRect(Color(0xFF1D4E9E), topLeft = androidx.compose.ui.geometry.Offset(4f, 4f), size = androidx.compose.ui.geometry.Size(12f, 56f))
-            drawPath(borde, Color(0xFFF2C200))
-            drawPath(rojo, Color(0xFFD7262E))
+            drawPath(azul, Color(0xFF1D4E9E)); drawPath(amarillo, Color(0xFFF2C200)); drawPath(rojo, Color(0xFFD7262E))
+            drawPath(erre, Color(0xFF1A1A1A))
             if (conError) {
-                drawCircle(Color(0xFFF2C200), radius = 11f, center = androidx.compose.ui.geometry.Offset(48f, 46f))
-                drawRect(Color(0xFF1A1A1A), topLeft = androidx.compose.ui.geometry.Offset(46f, 38f), size = androidx.compose.ui.geometry.Size(4f, 10f))
-                drawCircle(Color(0xFF1A1A1A), radius = 2.2f, center = androidx.compose.ui.geometry.Offset(48f, 52.5f))
-            } else drawCircle(Color(0xFFF2EFE6), radius = 6f, center = androidx.compose.ui.geometry.Offset(50f, 50f))
+                drawCircle(Color(0xFFF2C200), radius = 17f, center = centro)
+                drawRect(Color(0xFF1A1A1A), topLeft = androidx.compose.ui.geometry.Offset(69.7f, 61f), size = androidx.compose.ui.geometry.Size(6f, 15f))
+                drawCircle(Color(0xFF1A1A1A), radius = 3.4f, center = androidx.compose.ui.geometry.Offset(72.72f, 82.5f))
+            } else drawCircle(Color(0xFFF2EFE6), radius = 6.24f, center = centro)
         }
     }
 }
