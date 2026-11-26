@@ -286,15 +286,14 @@ private fun MarcaTablero(estado: Estado) {
 }
 
 /**
- * El logo de Tablero (el mismo del ícono de la app y de la web), según el estado, como el ícono de la notificación:
- * a color si todo va bien; con un "!" amarillo en el círculo si hay torrents con error; solo el contorno, apagado, si
- * no hay conexión con rTorrent.
+ * El logo de Tablero según el estado, con los íconos de android/tablero/docs/iconos: normal (o claro con el tema
+ * claro), error (un "!" rojo en el círculo) y sin conexión con rTorrent (en grises).
  */
 @Composable
 fun LogoTablero(estado: Estado, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier.size(size)) {
-    val c = LocalColores.current
     val sinConexion = estado.errorConexion != null || estado.conectado == false
     val conError = !sinConexion && estado.torrents.any { it.status == "error" }
+    val claro = estado.prefs.theme == "light"
     // El logo de la web recortado al dibujo (viewBox 4 4 56 56, sin el marco): cuadrado, la "r" negra entre los colores.
     androidx.compose.foundation.Canvas(modifier) {
         val k = this.size.width / 56f
@@ -306,22 +305,21 @@ fun LogoTablero(estado: Estado, size: androidx.compose.ui.unit.Dp, modifier: Mod
         val centro = o(50f, 50f)
         scale(k, k, pivot = androidx.compose.ui.geometry.Offset.Zero) {
             translate(-4f, -4f) {
-                if (sinConexion) {
-                    val st = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5f)
-                    drawRect(c.dim, topLeft = o(4f, 4f), size = sz(12f, 56f), style = st)
-                    drawPath(amarillo, c.dim, style = st); drawPath(rojo, c.dim, style = st)
-                    drawCircle(c.dim, radius = 6f, center = centro, style = st)
-                    return@translate
+                // Los colores de android/tablero/docs/iconos (tablero, -claro, -error, -sinconexion).
+                val fondo = if (claro) Color(0xFFF2EFE6) else Color(0xFF1A1A1A)
+                drawRect(fondo, topLeft = o(4f, 4f), size = sz(56f, 56f))
+                drawRect(if (sinConexion) Color(0xFF5F6368) else Color(0xFF1D4E9E), topLeft = o(4f, 4f), size = sz(12f, 56f))
+                drawPath(amarillo, if (sinConexion) Color(0xFFA3A7AD) else Color(0xFFF2C200))
+                drawPath(rojo, if (sinConexion) Color(0xFF7D8186) else Color(0xFFD7262E))
+                when {
+                    sinConexion -> drawCircle(Color(0xFFD3D5D8), radius = 6f, center = centro)
+                    conError -> {
+                        drawCircle(Color(0xFFF2EFE6), radius = 10f, center = o(49.5f, 49.5f))
+                        drawRoundRect(Color(0xFFD7262E), topLeft = o(47.3f, 42f), size = sz(4.4f, 9.2f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.6f))
+                        drawCircle(Color(0xFFD7262E), radius = 2.3f, center = o(49.5f, 55.2f))
+                    }
+                    else -> drawCircle(if (claro) Color(0xFF1A1A1A) else Color(0xFFF2EFE6), radius = 6f, center = centro)
                 }
-                drawRect(Color(0xFF1A1A1A), topLeft = o(4f, 4f), size = sz(56f, 56f))
-                drawRect(Color(0xFF1D4E9E), topLeft = o(4f, 4f), size = sz(12f, 56f))
-                drawPath(amarillo, Color(0xFFF2C200))
-                drawPath(rojo, Color(0xFFD7262E))
-                if (conError) {
-                    drawCircle(Color(0xFFF2C200), radius = 9f, center = o(49f, 48f))
-                    drawRect(Color(0xFF1A1A1A), topLeft = o(47.4f, 42f), size = sz(3.2f, 7.5f))
-                    drawCircle(Color(0xFF1A1A1A), radius = 1.8f, center = o(49f, 52.5f))
-                } else drawCircle(Color(0xFFF2EFE6), radius = 6f, center = centro)
             }
         }
     }

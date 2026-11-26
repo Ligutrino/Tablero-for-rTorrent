@@ -1,5 +1,10 @@
 # Cambios de la variante Android
 
+## 0.11-android.29-kotlin (25-11-2026, rama `kotlin`)
+
+- El logo de la barra usa los íconos de `android/tablero/docs/iconos`: tablero (o tablero-claro con el tema claro),
+  tablero-error (círculo claro con "!" rojo) y tablero-sinconexion (en grises), recortados sin el marco.
+
 ## 0.11-android.28-kotlin (25-11-2026, rama `kotlin`)
 
 - Logo como el de la web recortado al dibujo (viewBox 4 4 56 56): cuadrado, sin esquinas redondeadas, la "r" negra entre
