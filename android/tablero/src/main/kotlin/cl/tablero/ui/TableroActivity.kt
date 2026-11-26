@@ -228,6 +228,7 @@ class TableroActivity : ComponentActivity(), Plataforma {
 
     override val tieneSelectorCarpetas: Boolean get() = true
     override val propiedadesDialogo get() = propiedadesDialogo()
+    override val fuenteMarca by lazy { fuenteMarca() }
 
     override fun elegirArchivos(tipos: List<String>, varios: Boolean, listo: (List<ArchivoLocal>) -> Unit) {
         archivosListo = listo

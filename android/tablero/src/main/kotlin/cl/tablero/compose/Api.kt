@@ -37,6 +37,8 @@ interface Plataforma {
     /** Las propiedades de los diálogos (en Android, además, bajo las barras del sistema). */
     val propiedadesDialogo: androidx.compose.ui.window.DialogProperties
         get() = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    /** La fuente de la marca ("Tablero Marca" de la web: Inter 4.0 recortada); sin ella, la del sistema. */
+    val fuenteMarca: androidx.compose.ui.text.font.FontFamily get() = androidx.compose.ui.text.font.FontFamily.Default
 }
 
 /**

@@ -269,16 +269,18 @@ private fun MarcaTablero(estado: Estado) {
     val c = LocalColores.current
     val medidor = androidx.compose.ui.text.rememberTextMeasurer()
     val dens = androidx.compose.ui.platform.LocalDensity.current
-    val grande = androidx.compose.ui.text.TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium, lineHeight = 18.sp)
+    // Como .brand-name de app.css: "Tablero" en 600 y "para rTorrent" en 400, con la fuente de la marca.
+    val marca = estado.plataforma.fuenteMarca
+    val grande = androidx.compose.ui.text.TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold, lineHeight = 18.sp, fontFamily = marca)
     val anchoT = medidor.measure("Tablero", grande).size.width
-    val anchoP = medidor.measure("para rTorrent", androidx.compose.ui.text.TextStyle(fontSize = 10.sp)).size.width
+    val anchoP = medidor.measure("para rTorrent", androidx.compose.ui.text.TextStyle(fontSize = 10.sp, fontFamily = marca)).size.width
     val chico = (10f * (anchoT * 2f / 3f) / anchoP.coerceAtLeast(1)).sp
     val anchoTdp = with(dens) { anchoT.toDp() }
     Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         LogoTablero(estado, 0.dp, Modifier.fillMaxHeight().aspectRatio(1f))
         Column {
             Text("Tablero", style = grande, color = c.text, maxLines = 1, softWrap = false)
-            Text("para rTorrent", fontSize = chico, lineHeight = chico, color = c.dim, maxLines = 1, softWrap = false,
+            Text("para rTorrent", fontSize = chico, lineHeight = chico, fontFamily = marca, color = c.dim, maxLines = 1, softWrap = false,
                 textAlign = androidx.compose.ui.text.style.TextAlign.End,
                 modifier = Modifier.padding(start = anchoTdp / 3).width(anchoTdp * 2 / 3))
         }

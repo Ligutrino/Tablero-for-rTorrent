@@ -24,6 +24,14 @@ import kotlin.system.exitProcess
 
 /** Lo del sistema en el escritorio: solo se anota (las capturas no abren nada). */
 class Escritorio : Plataforma {
+    // La fuente de la marca, de res/font de la app (los mismos OTF que usa Android).
+    override val fuenteMarca by lazy {
+        val dir = java.io.File(System.getenv("TABLERO_RAIZ") ?: ".", "android/tablero/src/main/res/font")
+        fun f(n: String, w: androidx.compose.ui.text.font.FontWeight) =
+            androidx.compose.ui.text.platform.Font(n, java.io.File(dir, "$n.otf").readBytes(), w)
+        try { androidx.compose.ui.text.font.FontFamily(f("tablero_marca_400", androidx.compose.ui.text.font.FontWeight.Normal), f("tablero_marca_600", androidx.compose.ui.text.font.FontWeight.SemiBold)) }
+        catch (e: Exception) { androidx.compose.ui.text.font.FontFamily.Default }
+    }
     val pedidos = ArrayList<String>()
     override fun abrirCarpeta(path: String) { pedidos.add("abrirCarpeta $path") }
     override fun encenderRtorrent() { pedidos.add("encenderRtorrent") }

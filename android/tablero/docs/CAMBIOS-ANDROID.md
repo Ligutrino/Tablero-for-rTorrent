@@ -1,5 +1,11 @@
 # Cambios de la variante Android
 
+## 0.11-android.30-kotlin (25-11-2026, rama `kotlin`)
+
+- La marca usa la fuente de la web ("Tablero Marca": Inter 4.0, SIL OFL 1.1, recortada a "Tablero para rTorrent"):
+  los mismos woff2 de app.css pasados a OTF en `res/font` (tablero_marca_400 y _600). "Tablero" en 600 y "para
+  rTorrent" en 400, como .brand-name.
+
 ## 0.11-android.29-kotlin (25-11-2026, rama `kotlin`)
 
 - El logo de la barra usa los íconos de `android/tablero/docs/iconos`: tablero (o tablero-claro con el tema claro),
