@@ -1,5 +1,10 @@
 # Cambios de la variante Android
 
+## 0.11-android.32-kotlin (25-11-2026, rama `kotlin`)
+
+- Arreglo de compilación: FuenteAndroid.kt importaba `cl.tablero.R`, pero el R de la app está en `cl.tablero.ui`
+  (namespace), el mismo paquete del archivo.
+
 ## 0.11-android.31-kotlin (25-11-2026, rama `kotlin`)
 
 - Espaciado de la marca como .brand/fitBrand de la web: "para rTorrent" justo bajo "Tablero" (línea de alto 1), el logo

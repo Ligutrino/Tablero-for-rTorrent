@@ -3,7 +3,6 @@ package cl.tablero.ui
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import cl.tablero.R
 
 /**
  * La fuente de la marca de la web ("Tablero Marca" de app.css): Inter 4.0 (SIL Open Font License 1.1, rsms.me/inter),
