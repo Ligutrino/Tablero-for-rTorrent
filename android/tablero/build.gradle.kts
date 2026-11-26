@@ -27,10 +27,15 @@ android {
 
     signingConfigs {
         getByName("debug") {
-            storeFile = rootProject.file("debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+            // android/debug.keystore no va en git: si existe se usa (APK instalables encima de los
+            // anteriores); si no, Gradle usa la llave de depuración propia de cada equipo.
+            val llave = rootProject.file("debug.keystore")
+            if (llave.exists()) {
+                storeFile = llave
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
         }
     }
     buildTypes {

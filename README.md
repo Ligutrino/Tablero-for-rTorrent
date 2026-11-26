@@ -121,8 +121,9 @@ adb install -r out/rtorrent-demo-debug.apk    # opcional: la app de prueba míni
 ```
 
 `out/` queda con `tablero.apk`, `rtorrent-demo-debug.apk` y `native/<abi>/librtorrent.so`. Las dos apps son independientes: cada una tiene sus propios torrents y sus propias descargas.
-El APK se firma con `android/debug.keystore` (incluido a propósito), así que cada compilación nueva
-se instala encima de la anterior con `adb install -r`.
+Si existe `android/debug.keystore` (no está en git, cada uno pone la suya), el APK se firma con ella y
+cada compilación nueva se instala encima de la anterior con `adb install -r`. Si no existe, Gradle
+usa la llave de depuración propia de tu equipo (`~/.android/debug.keystore`).
 
 ### Probar que el motor funciona
 
