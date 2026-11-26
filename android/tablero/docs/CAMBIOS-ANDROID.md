@@ -1,5 +1,12 @@
 # Cambios de la variante Android
 
+## 0.11-android.26-kotlin (25-11-2026, rama `kotlin`)
+
+- Barra de arriba: el logo de Tablero a la izquierda del título (queda solo el logo si el título no cabe). Cambia con el
+  estado, como el ícono de la notificación: a color; con un "!" amarillo si hay torrents con error; solo el contorno,
+  apagado, sin conexión con rTorrent.
+- Solo las velocidades abren el gráfico (antes también el título).
+
 ## 0.11-android.25-kotlin (25-11-2026, rama `kotlin`)
 
 - Posición (#) en vivo: el botón cambia la barra de abajo a Al principio, Subir, Bajar, Al final y Listo. Cada toque

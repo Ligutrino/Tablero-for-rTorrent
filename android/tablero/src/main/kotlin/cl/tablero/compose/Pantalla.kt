@@ -1,5 +1,6 @@
 package cl.tablero.compose
 
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.asPaddingValues
@@ -177,7 +178,7 @@ private fun BarraSuperior(estado: Estado) {
         IconButton(onClick = { estado.cajon = true }) { Icono("menu", size = 22.dp, desc = "Filtros") }
     }, title = {
         // Tocar las velocidades abre o cierra el gráfico de velocidad abajo.
-        TituloYVelocidades(estado, Modifier.clickable { estado.grafico = !estado.grafico })
+        TituloYVelocidades(estado) { estado.grafico = !estado.grafico }
     }, actions = {
         // De izquierda a derecha: buscar, ordenar, límites, opciones, puerto y encendido (este queda en la esquina).
         BotonBarra("search", "Buscar") { estado.buscando = true }
@@ -232,22 +233,67 @@ private fun BotonEncendido(estado: Estado) {
  * Tablero + velocidades lado a lado, Tablero + una sobre otra, solo lado a lado, solo una sobre otra.
  */
 @Composable
-private fun TituloYVelocidades(estado: Estado, modifier: Modifier = Modifier) {
+private fun TituloYVelocidades(estado: Estado, onVelocidades: () -> Unit) {
+    // Solo las velocidades abren el gráfico; el logo y el título no hacen nada.
+    val toque = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onVelocidades).padding(horizontal = 4.dp, vertical = 2.dp)
     androidx.compose.ui.layout.Layout(content = {
-        Text("Tablero", fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
-        Velocidades(estado, lado = true)
-        Velocidades(estado, lado = false)
-    }, modifier = modifier) { ms, cs ->
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LogoTablero(estado, 22.dp)
+            Text("Tablero", fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
+        }
+        LogoTablero(estado, 22.dp)
+        Box(toque) { Velocidades(estado, lado = true) }
+        Box(toque) { Velocidades(estado, lado = false) }
+    }) { ms, cs ->
         val gap = 12.dp.roundToPx()
         val libre = androidx.compose.ui.unit.Constraints()
-        val t = ms[0].measure(libre); val fila = ms[1].measure(libre); val col = ms[2].measure(libre)
-        val (titulo, v) = listOf(true to fila, true to col, false to fila, false to col)
-            .firstOrNull { (ti, v) -> (if (ti) t.width + gap else 0) + v.width <= cs.maxWidth } ?: (false to col)
+        // Sin espacio para el título, queda solo el logo.
+        val t = ms[0].measure(libre).let { if (it.width + gap + ms[3].minIntrinsicWidth(0) <= cs.maxWidth) it else ms[1].measure(libre) }
+        val fila = ms[2].measure(libre); val col = ms[3].measure(libre)
+        val (titulo, v) = listOf(true to fila, true to col)
+            .firstOrNull { (ti, v) -> (if (ti) t.width + gap else 0) + v.width <= cs.maxWidth } ?: (true to col)
         val x = if (titulo) t.width + gap else 0
         val h = maxOf(v.height, if (titulo) t.height else 0)
         layout(minOf(x + v.width, cs.maxWidth), h) {
             if (titulo) t.placeRelative(0, (h - t.height) / 2)
             v.placeRelative(x, (h - v.height) / 2)
+        }
+    }
+}
+
+/**
+ * El logo de Tablero (el mismo del ícono de la app y de la web), según el estado, como el ícono de la notificación:
+ * a color si todo va bien; con un "!" amarillo en el círculo si hay torrents con error; solo el contorno, apagado, si
+ * no hay conexión con rTorrent.
+ */
+@Composable
+fun LogoTablero(estado: Estado, size: androidx.compose.ui.unit.Dp) {
+    val c = LocalColores.current
+    val sinConexion = estado.errorConexion != null || estado.conectado == false
+    val conError = !sinConexion && estado.torrents.any { it.status == "error" }
+    androidx.compose.foundation.Canvas(Modifier.size(size)) {
+        val k = this.size.width / 64f
+        fun p(d: String) = androidx.compose.ui.graphics.vector.PathParser().parsePathString(d).toPath()
+        val borde = p("M16 4h44v16H32a16 16 0 0 0-16 16z")
+        val rojo = p("M46 20h14v40H26V36a6 6 0 0 1 6-6h14z")
+        scale(k, k, pivot = androidx.compose.ui.geometry.Offset.Zero) {
+            if (sinConexion) {
+                val st = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f)
+                drawRoundRect(c.dim, size = androidx.compose.ui.geometry.Size(64f, 64f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f), style = st)
+                drawRect(c.dim, topLeft = androidx.compose.ui.geometry.Offset(4f, 4f), size = androidx.compose.ui.geometry.Size(12f, 56f), style = st)
+                drawPath(borde, c.dim, style = st); drawPath(rojo, c.dim, style = st)
+                drawCircle(c.dim, radius = 6f, center = androidx.compose.ui.geometry.Offset(50f, 50f), style = st)
+                return@scale
+            }
+            drawRoundRect(Color(0xFF1A1A1A), size = androidx.compose.ui.geometry.Size(64f, 64f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f))
+            drawRect(Color(0xFF1D4E9E), topLeft = androidx.compose.ui.geometry.Offset(4f, 4f), size = androidx.compose.ui.geometry.Size(12f, 56f))
+            drawPath(borde, Color(0xFFF2C200))
+            drawPath(rojo, Color(0xFFD7262E))
+            if (conError) {
+                drawCircle(Color(0xFFF2C200), radius = 11f, center = androidx.compose.ui.geometry.Offset(48f, 46f))
+                drawRect(Color(0xFF1A1A1A), topLeft = androidx.compose.ui.geometry.Offset(46f, 38f), size = androidx.compose.ui.geometry.Size(4f, 10f))
+                drawCircle(Color(0xFF1A1A1A), radius = 2.2f, center = androidx.compose.ui.geometry.Offset(48f, 52.5f))
+            } else drawCircle(Color(0xFFF2EFE6), radius = 6f, center = androidx.compose.ui.geometry.Offset(50f, 50f))
         }
     }
 }
